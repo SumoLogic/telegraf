@@ -102,8 +102,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		a.Config.Agent.Hostname, a.Config.Agent.FlushInterval.Duration)
 
 	log.Printf("D! [agent] Initializing plugins")
-	err := a.initPlugins()
-	if err != nil {
+	if err := a.initPlugins(); err != nil {
 		return err
 	}
 
@@ -145,13 +144,16 @@ func (a *Agent) Run(ctx context.Context) error {
 		return err
 	}
 
-	var wg sync.WaitGroup
+	var (
+		wg      sync.WaitGroup
+		errChan = make(chan error)
+	)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err = a.runOutputs(ou)
-		if err != nil {
+		if err := a.runOutputs(ou); err != nil {
 			log.Printf("E! [agent] Error running outputs: %v", err)
+			errChan <- err
 		}
 	}()
 
@@ -159,18 +161,18 @@ func (a *Agent) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = a.runProcessors(apu)
-			if err != nil {
+			if err := a.runProcessors(apu); err != nil {
 				log.Printf("E! [agent] Error running processors: %v", err)
+				errChan <- err
 			}
 		}()
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = a.runAggregators(startTime, au)
-			if err != nil {
+			if err := a.runAggregators(startTime, au); err != nil {
 				log.Printf("E! [agent] Error running aggregators: %v", err)
+				errChan <- err
 			}
 		}()
 	}
@@ -179,9 +181,9 @@ func (a *Agent) Run(ctx context.Context) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = a.runProcessors(pu)
-			if err != nil {
+			if err := a.runProcessors(pu); err != nil {
 				log.Printf("E! [agent] Error running processors: %v", err)
+				errChan <- err
 			}
 		}()
 	}
@@ -189,13 +191,30 @@ func (a *Agent) Run(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err = a.runInputs(ctx, startTime, iu)
-		if err != nil {
+		if err := a.runInputs(ctx, startTime, iu); err != nil {
 			log.Printf("E! [agent] Error running inputs: %v", err)
+			errChan <- err
 		}
 	}()
 
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case e := <-errChan:
+				if e != nil {
+					// Don't terminate on first error to drain errChan
+					err = e
+				}
+
+			case <-done:
+				return
+			}
+		}
+	}()
 	wg.Wait()
+	close(errChan)
+	close(done)
 
 	log.Printf("D! [agent] Stopped Successfully")
 	return err
@@ -899,17 +918,17 @@ func (a *Agent) Test(ctx context.Context, wait time.Duration) error {
 // inputs to run.
 func (a *Agent) test(ctx context.Context, wait time.Duration, outputC chan<- telegraf.Metric) error {
 	log.Printf("D! [agent] Initializing plugins")
-	err := a.initPlugins()
-	if err != nil {
+	if err := a.initPlugins(); err != nil {
 		return err
 	}
 
-	startTime := time.Now()
-
-	next := outputC
-
-	var apu []*processorUnit
-	var au *aggregatorUnit
+	var (
+		apu       []*processorUnit
+		au        *aggregatorUnit
+		err       error
+		next      = outputC
+		startTime = time.Now()
+	)
 	if len(a.Config.Aggregators) != 0 {
 		procC := next
 		if len(a.Config.AggProcessors) != 0 {
@@ -938,24 +957,27 @@ func (a *Agent) test(ctx context.Context, wait time.Duration, outputC chan<- tel
 		return err
 	}
 
-	var wg sync.WaitGroup
+	var (
+		wg      sync.WaitGroup
+		errChan = make(chan error)
+	)
 
 	if au != nil {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = a.runProcessors(apu)
-			if err != nil {
+			if err := a.runProcessors(apu); err != nil {
 				log.Printf("E! [agent] Error running processors: %v", err)
+				errChan <- err
 			}
 		}()
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = a.runAggregators(startTime, au)
-			if err != nil {
+			if err := a.runAggregators(startTime, au); err != nil {
 				log.Printf("E! [agent] Error running aggregators: %v", err)
+				errChan <- err
 			}
 		}()
 	}
@@ -964,9 +986,9 @@ func (a *Agent) test(ctx context.Context, wait time.Duration, outputC chan<- tel
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = a.runProcessors(pu)
-			if err != nil {
+			if err := a.runProcessors(pu); err != nil {
 				log.Printf("E! [agent] Error running processors: %v", err)
+				errChan <- err
 			}
 		}()
 	}
@@ -974,17 +996,33 @@ func (a *Agent) test(ctx context.Context, wait time.Duration, outputC chan<- tel
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err = a.testRunInputs(ctx, wait, iu)
-		if err != nil {
+		if err := a.testRunInputs(ctx, wait, iu); err != nil {
 			log.Printf("E! [agent] Error running inputs: %v", err)
+			errChan <- err
 		}
 	}()
 
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case e := <-errChan:
+				if e != nil {
+					// Don't terminate on first error to drain errChan
+					err = e
+				}
+
+			case <-done:
+				return
+			}
+		}
+	}()
 	wg.Wait()
+	close(errChan)
+	close(done)
 
 	log.Printf("D! [agent] Stopped Successfully")
-
-	return nil
+	return err
 }
 
 // Once runs the full agent for a single gather.
@@ -1008,13 +1046,12 @@ func (a *Agent) Once(ctx context.Context, wait time.Duration) error {
 	return nil
 }
 
-// On runs the agent and performs a single gather sending output to the
-// outputF.  After gathering pauses for the wait duration to allow service
+// once runs the agent and performs a single gather sending output to the
+// outputF. After gathering, it pauses for the wait duration to allow service
 // inputs to run.
 func (a *Agent) once(ctx context.Context, wait time.Duration) error {
 	log.Printf("D! [agent] Initializing plugins")
-	err := a.initPlugins()
-	if err != nil {
+	if err := a.initPlugins(); err != nil {
 		return err
 	}
 
@@ -1056,13 +1093,17 @@ func (a *Agent) once(ctx context.Context, wait time.Duration) error {
 		return err
 	}
 
-	var wg sync.WaitGroup
+	var (
+		wg      sync.WaitGroup
+		errChan = make(chan error)
+	)
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err = a.runOutputs(ou)
-		if err != nil {
+		if err := a.runOutputs(ou); err != nil {
 			log.Printf("E! [agent] Error running outputs: %v", err)
+			errChan <- err
 		}
 	}()
 
@@ -1070,18 +1111,18 @@ func (a *Agent) once(ctx context.Context, wait time.Duration) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = a.runProcessors(apu)
-			if err != nil {
+			if err := a.runProcessors(apu); err != nil {
 				log.Printf("E! [agent] Error running processors: %v", err)
+				errChan <- err
 			}
 		}()
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = a.runAggregators(startTime, au)
-			if err != nil {
+			if err := a.runAggregators(startTime, au); err != nil {
 				log.Printf("E! [agent] Error running aggregators: %v", err)
+				errChan <- err
 			}
 		}()
 	}
@@ -1090,9 +1131,9 @@ func (a *Agent) once(ctx context.Context, wait time.Duration) error {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err = a.runProcessors(pu)
-			if err != nil {
+			if err := a.runProcessors(pu); err != nil {
 				log.Printf("E! [agent] Error running processors: %v", err)
+				errChan <- err
 			}
 		}()
 	}
@@ -1100,17 +1141,33 @@ func (a *Agent) once(ctx context.Context, wait time.Duration) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err = a.testRunInputs(ctx, wait, iu)
-		if err != nil {
+		if err := a.testRunInputs(ctx, wait, iu); err != nil {
 			log.Printf("E! [agent] Error running inputs: %v", err)
+			errChan <- err
 		}
 	}()
 
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case e := <-errChan:
+				if e != nil {
+					// Don't terminate on first error to drain errChan
+					err = e
+				}
+
+			case <-done:
+				return
+			}
+		}
+	}()
 	wg.Wait()
+	close(errChan)
+	close(done)
 
 	log.Printf("D! [agent] Stopped Successfully")
-
-	return nil
+	return err
 }
 
 // Returns the rounding precision for metrics.
