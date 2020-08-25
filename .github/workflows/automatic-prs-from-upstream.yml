@@ -20,5 +20,13 @@ jobs:
         with:
           token: ${{ secrets.PAT }}
           title: Upstream changes
-          body: Upstream changes
+          body: |
+            - Upstream changes
+
+            Auto-generated using [create-pull-request][1].
+
+            **Do not edit**: just merge it via [Rebase and merge][2].
+
+            [1]: https://github.com/peter-evans/create-pull-request
+            [2]: https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-pull-request-merges#rebase-and-merge-your-pull-request-commits
           branch: upstream-changes
