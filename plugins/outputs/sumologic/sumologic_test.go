@@ -245,7 +245,7 @@ func TestContentType(t *testing.T) {
 			expectedBody: []byte("metric=cpu field=value  42 0\n"),
 		},
 		{
-			name: "carbon2 (data format unset) is supported and falls back to inclue field in metric name",
+			name: "carbon2 (data format unset) is supported and falls back to include field in metric name",
 			plugin: func() *SumoLogic {
 				s := Default()
 				s.headers = map[string]string{
