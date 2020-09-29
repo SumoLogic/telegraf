@@ -29,6 +29,9 @@ git fetch ${FLAGS} --tags
 git checkout ${FLAGS} "${GIT_TAG}"
 echo "Checked out telegraf at ${GIT_TAG}"
 
+COMMIT="$(git rev-parse --short HEAD)"
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+VERSION="$(git describe --tags)"
 go mod download
 for OS in windows darwin linux; do
     echo "Building telegraf for ${OS}..."
@@ -37,7 +40,9 @@ for OS in windows darwin linux; do
         BINARY_PATH="${BINARY_PATH}.exe"
     fi
 
-    GOOS=${OS} GOARCH=amd64 go build -o "${BINARY_PATH}" ./cmd/telegraf
+    GOOS=${OS} GOARCH=amd64 go build \
+        -ldflags " -X main.commit=${COMMIT} -X main.branch=${BRANCH} -X main.version=${VERSION}" \
+        -o "${BINARY_PATH}" ./cmd/telegraf
 
     if [[ "${OS}" == "windows" ]] ; then
         ARCHIVE_PATH="$(basename "${BINARY_PATH}.zip")"
