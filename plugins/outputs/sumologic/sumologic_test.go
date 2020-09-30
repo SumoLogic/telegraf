@@ -684,7 +684,7 @@ func TestTryingToSendEmptyMetricsDoesntFail(t *testing.T) {
 	plugin := Default()
 	plugin.URL = u.String()
 
-	serializer, err := carbon2.NewSerializer(carbon2.Carbon2FormatFieldSeparate)
+	serializer, err := carbon2.NewSerializer(string(carbon2.Carbon2FormatFieldSeparate))
 	require.NoError(t, err)
 	plugin.SetSerializer(serializer)
 
