@@ -10,6 +10,7 @@ require (
 	collectd.org v0.5.0
 	github.com/Azure/azure-event-hubs-go/v3 v3.2.0
 	github.com/Azure/azure-storage-queue-go v0.0.0-20181215014128-6ed74e755687
+	//
 	github.com/Azure/go-autorest/autorest v0.11.17
 	github.com/Azure/go-autorest/autorest/adal v0.9.10
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.6
@@ -23,6 +24,16 @@ require (
 	github.com/amir/raidman v0.0.0-20170415203553-1ccc43bfb9c9
 	github.com/antchfx/xmlquery v1.3.5
 	github.com/antchfx/xpath v1.1.11
+	// github.com/Azure/go-autorest/autorest v0.11.4
+	// github.com/Azure/go-autorest/autorest/azure/auth v0.4.2
+	// github.com/BurntSushi/toml v0.3.1
+	// github.com/Mellanox/rdmamap v0.0.0-20191106181932-7c3c4763a6ee
+	// github.com/Microsoft/ApplicationInsights-Go v0.4.2
+	// github.com/Shopify/sarama v1.27.2
+	// github.com/StackExchange/wmi v0.0.0-20180725035823-b12b22c5341f // indirect
+	// github.com/aerospike/aerospike-client-go v1.27.0
+	// github.com/alecthomas/units v0.0.0-20190924025748-f65c72e2690d
+	// github.com/amir/raidman v0.0.0-20170415203553-1ccc43bfb9c9
 	github.com/apache/thrift v0.13.0
 	github.com/aristanetworks/glog v0.0.0-20191112221043-67e8567f59f3 // indirect
 	github.com/aristanetworks/goarista v0.0.0-20190325233358-a123909ec740
@@ -36,41 +47,62 @@ require (
 	github.com/bitly/go-hostpool v0.1.0 // indirect
 	github.com/bmatcuk/doublestar/v3 v3.0.0
 	github.com/bmizerany/assert v0.0.0-20160611221934-b7ed37b82869
+	//
 	github.com/caio/go-tdigest v3.1.0+incompatible
+	// github.com/caio/go-tdigest v2.3.0+incompatible // indirect
 	github.com/cisco-ie/nx-telemetry-proto v0.0.0-20190531143454-82441e232cf6
 	github.com/couchbase/go-couchbase v0.0.0-20180501122049-16db1f1fe037
 	github.com/couchbase/gomemcached v0.0.0-20180502221210-0da75df14530 // indirect
 	github.com/couchbase/goutils v0.0.0-20180530154633-e865a1461c8a // indirect
 	github.com/denisenkom/go-mssqldb v0.10.0
 	github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1
-	github.com/dimchansky/utfbom v1.1.1
-	github.com/docker/docker v20.10.6+incompatible
-	github.com/dynatrace-oss/dynatrace-metric-utils-go v0.1.0
-	github.com/eclipse/paho.mqtt.golang v1.3.0
-	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
-	github.com/go-logfmt/logfmt v0.5.0
+	// github.com/dimchansky/utfbom v1.1.1
+	// github.com/docker/docker v20.10.6+incompatible
+	// github.com/dynatrace-oss/dynatrace-metric-utils-go v0.1.0
+	// github.com/eclipse/paho.mqtt.golang v1.3.0
+	// github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
+	// github.com/go-logfmt/logfmt v0.5.0
+	// github.com/dimchansky/utfbom v1.1.0
+	// github.com/docker/docker v17.12.0-ce-rc1.0.20200916142827-bd33bbf0497b+incompatible
+	// github.com/docker/libnetwork v0.8.0-dev.2.0.20181012153825-d7b61745d166
+	// github.com/eclipse/paho.mqtt.golang v1.3.0
+	// github.com/ericchiang/k8s v1.2.0
+	// // github.com/ericchiang/k8s v1.2.0
+	// github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
+	// github.com/go-logfmt/logfmt v0.5.0
+	// github.com/go-ole/go-ole v1.2.1 // indirect
 	github.com/go-ping/ping v0.0.0-20210201095549-52eed920f98c
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/goburrow/modbus v0.1.0 // indirect
 	github.com/goburrow/serial v0.1.0 // indirect
 	github.com/gobwas/glob v0.2.3
+	//
 	github.com/gofrs/uuid v3.3.0+incompatible
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/geo v0.0.0-20190916061304-5b978397cfec
 	github.com/golang/protobuf v1.5.1
+	// github.com/gofrs/uuid v2.1.0+incompatible
+	// github.com/gogo/protobuf v1.3.1
+	// github.com/golang/geo v0.0.0-20190916061304-5b978397cfec
+	// github.com/golang/protobuf v1.4.2
 	github.com/golang/snappy v0.0.1
 	github.com/google/go-cmp v0.5.5
 	github.com/google/go-github/v32 v32.1.0
 	github.com/gopcua/opcua v0.1.13
 	github.com/gorilla/mux v1.7.3
-	github.com/gorilla/websocket v1.4.2
-	github.com/gosnmp/gosnmp v1.32.0
-	github.com/grid-x/modbus v0.0.0-20210224155242-c4a3d042e99b
-	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
-	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
-	github.com/harlow/kinesis-consumer v0.3.1-0.20181230152818-2f58b136fee0
-	github.com/hashicorp/consul/api v1.8.1
+	// github.com/gorilla/websocket v1.4.2
+	// github.com/gosnmp/gosnmp v1.32.0
+	// github.com/grid-x/modbus v0.0.0-20210224155242-c4a3d042e99b
+	// github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
+	// github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
+	// github.com/harlow/kinesis-consumer v0.3.1-0.20181230152818-2f58b136fee0
+	// github.com/hashicorp/consul/api v1.8.1
+	// github.com/gosnmp/gosnmp v1.29.0
+	// github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
+	// github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
+	// github.com/harlow/kinesis-consumer v0.3.1-0.20181230152818-2f58b136fee0
+	// github.com/hashicorp/consul/api v1.6.0
 	github.com/hashicorp/go-msgpack v0.5.5 // indirect
 	github.com/influxdata/go-syslog/v2 v2.0.1
 	github.com/influxdata/influxdb-observability/common v0.0.0-20210429174543-86ae73cafd31
@@ -85,12 +117,21 @@ require (
 	github.com/kardianos/service v1.0.0
 	github.com/karrick/godirwalk v1.16.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
+	//
 	github.com/lib/pq v1.3.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369
 	github.com/mdlayher/apcupsd v0.0.0-20200608131503-2bf01da7bf1b
 	github.com/microsoft/ApplicationInsights-Go v0.4.4
 	github.com/miekg/dns v1.1.31
 	github.com/moby/ipvs v1.0.1
+	// github.com/kubernetes/apimachinery v0.0.0-20190119020841-d41becfba9ee
+	// github.com/leesper/go_rng v0.0.0-20190531154944-a612b043e353 // indirect
+	// github.com/lib/pq v1.3.0 // indirect
+	// github.com/matttproud/golang_protobuf_extensions v1.0.1
+	// github.com/mdlayher/apcupsd v0.0.0-20200608131503-2bf01da7bf1b
+	// github.com/miekg/dns v1.1.31
+	// github.com/mitchellh/go-testing-interface v1.14.0 // indirect
+	// github.com/mitchellh/mapstructure v1.2.3 // indirect
 	github.com/multiplay/go-ts3 v1.0.0
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/nats-io/nats-server/v2 v2.1.4
@@ -102,6 +143,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.7.1
 	github.com/prometheus/client_model v0.2.0
+	//
 	github.com/prometheus/common v0.15.0
 	github.com/prometheus/procfs v0.6.0
 	github.com/prometheus/prometheus v1.8.2-0.20200911110723-e83ef207b6c2
@@ -115,6 +157,17 @@ require (
 	github.com/snowflakedb/gosnowflake v1.5.0
 	github.com/streadway/amqp v0.0.0-20190827072141-edfb9018d271
 	github.com/stretchr/testify v1.7.0
+	// github.com/prometheus/common v0.13.0
+	// github.com/prometheus/procfs v0.1.3
+	// github.com/prometheus/prometheus v1.8.2-0.20200911110723-e83ef207b6c2
+	// github.com/riemann/riemann-go-client v0.5.0
+	// github.com/safchain/ethtool v0.0.0-20200218184317-f459e2d13664
+	// github.com/shirou/gopsutil v2.20.9+incompatible
+	// github.com/shopspring/decimal v0.0.0-20200105231215-408a2507e114 // indirect
+	// github.com/sirupsen/logrus v1.6.0
+	// github.com/soniah/gosnmp v1.25.0
+	// github.com/streadway/amqp v0.0.0-20190827072141-edfb9018d271
+	// github.com/stretchr/testify v1.6.1
 	github.com/tbrandon/mbserver v0.0.0-20170611213546-993e1772cc62
 	github.com/testcontainers/testcontainers-go v0.11.0
 	github.com/tidwall/gjson v1.6.0
@@ -128,6 +181,7 @@ require (
 	github.com/wvanbergen/kazoo-go v0.0.0-20180202103751-f72d8611297a // indirect
 	github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c
 	github.com/yuin/gopher-lua v0.0.0-20180630135845-46796da1b0b4 // indirect
+	//
 	go.starlark.net v0.0.0-20210406145628-7a1108eaa012
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
@@ -141,11 +195,23 @@ require (
 	google.golang.org/genproto v0.0.0-20201110150050-8816d57aaa9a
 	google.golang.org/grpc v1.37.0
 	gopkg.in/djherbis/times.v1 v1.2.0
+	// go.starlark.net v0.0.0-20200901195727-6e684ef5eeee
+	// golang.org/x/net v0.0.0-20200904194848-62affa334b73
+	// golang.org/x/oauth2 v0.0.0-20200107190931-bf48bf16ab8d
+	// golang.org/x/sync v0.0.0-20200625203802-6e8e738ad208
+	// golang.org/x/sys v0.0.0-20200826173525-f9321e4c35a6
+	// golang.org/x/text v0.3.3
+	// golang.zx2c4.com/wireguard/wgctrl v0.0.0-20200205215550-e35592f146e4
+	// gonum.org/v1/gonum v0.6.2 // indirect
+	// google.golang.org/api v0.29.0
+	// google.golang.org/genproto v0.0.0-20200815001618-f69a88009b70
+	// google.golang.org/grpc v1.33.1
 	gopkg.in/fatih/pool.v2 v2.0.0 // indirect
 	gopkg.in/gorethink/gorethink.v3 v3.0.5
 	gopkg.in/ldap.v3 v3.1.0
 	gopkg.in/mgo.v2 v2.0.0-20190816093944-a6b53ec6cb22
 	gopkg.in/olivere/elastic.v5 v5.0.70
+	//
 	gopkg.in/yaml.v2 v2.4.0
 	gotest.tools v2.2.0+incompatible
 	k8s.io/api v0.20.4
