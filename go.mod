@@ -236,3 +236,7 @@ replace github.com/satori/go.uuid => github.com/gofrs/uuid v3.2.0+incompatible
 
 // replaced due to https//github.com/mdlayher/apcupsd/issues/10
 replace github.com/mdlayher/apcupsd => github.com/influxdata/apcupsd v0.0.0-20210427145308-694d5caead0e
+
+// Needed due to https://github.com/golang/go/issues/46645 present in go1.17-beta1.
+// TODO: remove when this is fixed in newer go versions.
+replace golang.org/x/sys => golang.org/x/sys v0.0.0-20210630005230-0f9fa26af87c
