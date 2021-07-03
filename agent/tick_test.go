@@ -11,6 +11,8 @@ import (
 )
 
 func TestAlignedTicker(t *testing.T) {
+	t.Parallel()
+
 	interval := 10 * time.Second
 	jitter := 0 * time.Second
 
@@ -45,6 +47,8 @@ func TestAlignedTicker(t *testing.T) {
 }
 
 func TestAlignedTickerJitter(t *testing.T) {
+	t.Parallel()
+
 	interval := 10 * time.Second
 	jitter := 5 * time.Second
 
@@ -71,6 +75,8 @@ func TestAlignedTickerJitter(t *testing.T) {
 }
 
 func TestAlignedTickerMissedTick(t *testing.T) {
+	t.Parallel()
+
 	interval := 10 * time.Second
 	jitter := 0 * time.Second
 
@@ -89,6 +95,8 @@ func TestAlignedTickerMissedTick(t *testing.T) {
 }
 
 func TestUnalignedTicker(t *testing.T) {
+	t.Parallel()
+
 	interval := 10 * time.Second
 	jitter := 0 * time.Second
 
@@ -124,6 +132,8 @@ func TestUnalignedTicker(t *testing.T) {
 }
 
 func TestRollingTicker(t *testing.T) {
+	t.Parallel()
+
 	interval := 10 * time.Second
 	jitter := 0 * time.Second
 
@@ -165,6 +175,8 @@ func TestAlignedTickerDistribution(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
+	t.Parallel()
+
 	interval := 10 * time.Second
 	jitter := 5 * time.Second
 
@@ -186,6 +198,8 @@ func TestUnalignedTickerDistribution(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
+	t.Parallel()
+
 	interval := 10 * time.Second
 	jitter := 5 * time.Second
 
@@ -205,6 +219,8 @@ func TestRollingTickerDistribution(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
+
+	t.Parallel()
 
 	interval := 10 * time.Second
 	jitter := 5 * time.Second
