@@ -186,10 +186,12 @@ func (a *Agent) Run(ctx context.Context) error {
 // RunWithChannel starts inputs and passes all gathered metrics into the passed
 // channel.
 func (a *Agent) RunWithChannel(ctx context.Context, out chan<- telegraf.Metric) error {
-	log.Printf("I! [agent] Config: Interval:%s, Quiet:%#v, Hostname:%#v, "+
-		"Flush Interval:%s",
-		a.Config.Agent.Interval.Duration, a.Config.Agent.Quiet,
-		a.Config.Agent.Hostname, a.Config.Agent.FlushInterval.Duration,
+	log.Printf("I! [agent] Config: Interval:%v, Quiet:%#v, Hostname:%#v, "+
+		"Flush Interval:%v",
+		a.Config.Agent.Interval,
+		a.Config.Agent.Quiet,
+		a.Config.Agent.Hostname,
+		a.Config.Agent.FlushInterval,
 	)
 
 	log.Printf("D! [agent] Initializing plugins")
@@ -209,10 +211,7 @@ func (a *Agent) RunWithChannel(ctx context.Context, out chan<- telegraf.Metric) 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := a.runInputs(ctx, startTime, iu)
-		if err != nil {
-			log.Printf("E! [agent] Error running inputs: %v", err)
-		}
+		a.runInputs(ctx, startTime, iu)
 	}()
 
 	wg.Wait()
