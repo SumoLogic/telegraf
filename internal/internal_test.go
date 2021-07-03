@@ -611,6 +611,6 @@ func TestProductToken(t *testing.T) {
 	token := ProductToken()
 	// Telegraf version depends on the call to SetVersion, it cannot be set
 	// multiple times and is not thread-safe.
-	re := regexp.MustCompile(`^Telegraf/[^\s]+ Go/\d+.\d+(.\d+)?$`)
+	re := regexp.MustCompile(`^Telegraf/[^\s]+ Go/\d+.\d+(.\d+|beta\d+)?$`)
 	require.True(t, re.MatchString(token), token)
 }
