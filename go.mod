@@ -56,6 +56,12 @@ require (
 	github.com/couchbase/goutils v0.0.0-20180530154633-e865a1461c8a // indirect
 	github.com/denisenkom/go-mssqldb v0.10.0
 	github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1
+	github.com/dimchansky/utfbom v1.1.1
+	github.com/docker/docker v20.10.6+incompatible
+	github.com/dynatrace-oss/dynatrace-metric-utils-go v0.2.0
+	github.com/eclipse/paho.mqtt.golang v1.2.0
+	github.com/ghodss/yaml v1.0.0
+	github.com/go-logfmt/logfmt v0.5.0
 	// github.com/dimchansky/utfbom v1.1.1
 	// github.com/docker/docker v20.10.6+incompatible
 	// github.com/dynatrace-oss/dynatrace-metric-utils-go v0.1.0
@@ -91,6 +97,10 @@ require (
 	github.com/google/go-github/v32 v32.1.0
 	github.com/gopcua/opcua v0.1.13
 	github.com/gorilla/mux v1.7.3
+	github.com/gorilla/websocket v1.4.2
+	github.com/gosnmp/gosnmp v1.32.0
+	github.com/grid-x/modbus v0.0.0-20210224155242-c4a3d042e99b
+	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	// github.com/gorilla/websocket v1.4.2
 	// github.com/gosnmp/gosnmp v1.32.0
 	// github.com/grid-x/modbus v0.0.0-20210224155242-c4a3d042e99b
@@ -101,7 +111,8 @@ require (
 	// github.com/gosnmp/gosnmp v1.29.0
 	// github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	// github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
-	// github.com/harlow/kinesis-consumer v0.3.1-0.20181230152818-2f58b136fee0
+	github.com/harlow/kinesis-consumer v0.3.1-0.20181230152818-2f58b136fee0
+	github.com/hashicorp/consul/api v1.6.0
 	// github.com/hashicorp/consul/api v1.6.0
 	github.com/hashicorp/go-msgpack v0.5.5 // indirect
 	github.com/influxdata/go-syslog/v2 v2.0.1
