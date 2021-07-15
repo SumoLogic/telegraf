@@ -202,6 +202,12 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/wireless"
 	_ "github.com/influxdata/telegraf/plugins/inputs/x509_cert"
 	_ "github.com/influxdata/telegraf/plugins/inputs/zfs"
-	_ "github.com/influxdata/telegraf/plugins/inputs/zipkin"
+
+	// Disable due to OT conflict when upgrading to 0.28.0
+	// .... pkg/mod/github.com/openzipkin/zipkin-go-opentracing@v0.3.4/thrift/gen-go/zipkincore/zipkinCore.go:155:37: not enough arguments in call to iprot.ReadStructBegin
+	//   have ()
+	//   want (context.Context)
+	// _ "github.com/influxdata/telegraf/plugins/inputs/zipkin"
+
 	_ "github.com/influxdata/telegraf/plugins/inputs/zookeeper"
 )
