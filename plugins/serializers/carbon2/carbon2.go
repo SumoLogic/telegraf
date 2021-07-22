@@ -41,7 +41,7 @@ func NewSerializer(metricsFormat string, sanitizeReplaceChar string) (*Serialize
 		return nil, errors.New("sanitize replace char has to be a singular character")
 	}
 
-	var f = format(metricsFormat)
+	f := format(metricsFormat)
 
 	if _, ok := formats[f]; !ok {
 		return nil, fmt.Errorf("unknown carbon2 format: %s", f)
@@ -121,6 +121,12 @@ func (s *Serializer) IsMetricsFormatUnset() bool {
 }
 
 func serializeMetricFieldSeparate(name, fieldName string) string {
+	if fieldName == "" {
+		return fmt.Sprintf("metric=%s ",
+			strings.Replace(name, " ", "_", -1),
+		)
+	}
+
 	return fmt.Sprintf("metric=%s field=%s ",
 		strings.ReplaceAll(name, " ", "_"),
 		strings.ReplaceAll(fieldName, " ", "_"),
@@ -128,6 +134,12 @@ func serializeMetricFieldSeparate(name, fieldName string) string {
 }
 
 func serializeMetricIncludeField(name, fieldName string) string {
+	if fieldName == "" {
+		return fmt.Sprintf("metric=%s ",
+			strings.Replace(name, " ", "_", -1),
+		)
+	}
+
 	return fmt.Sprintf("metric=%s_%s ",
 		strings.ReplaceAll(name, " ", "_"),
 		strings.ReplaceAll(fieldName, " ", "_"),
@@ -139,6 +151,24 @@ func formatValue(fieldValue interface{}) string {
 	case bool:
 		// Print bools as 0s and 1s
 		return fmt.Sprintf("%d", bool2int(v))
+	case float32:
+		// check if this is really an integer, make sure it ends with a trailing zero if so
+		var precision int
+		if v == float32(int32(v)) {
+			precision = 1
+		} else {
+			precision = -1
+		}
+		return strconv.FormatFloat(float64(v), 'f', precision, 32)
+	case float64:
+		// check if this is really an integer, make sure it ends with a trailing zero if so
+		var precision int
+		if v == float64(int64(v)) {
+			precision = 1
+		} else {
+			precision = -1
+		}
+		return strconv.FormatFloat(v, 'f', precision, 64)
 	default:
 		return fmt.Sprintf("%v", v)
 	}
