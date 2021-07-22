@@ -41,7 +41,7 @@ func NewSerializer(metricsFormat string, sanitizeReplaceChar string) (*Serialize
 		return nil, errors.New("sanitize replace char has to be a singular character")
 	}
 
-	var f = format(metricsFormat)
+	f := format(metricsFormat)
 
 	if _, ok := formats[f]; !ok {
 		return nil, fmt.Errorf("unknown carbon2 format: %s", f)
@@ -121,6 +121,12 @@ func (s *Serializer) IsMetricsFormatUnset() bool {
 }
 
 func serializeMetricFieldSeparate(name, fieldName string) string {
+	if fieldName == "" {
+		return fmt.Sprintf("metric=%s ",
+			strings.Replace(name, " ", "_", -1),
+		)
+	}
+
 	return fmt.Sprintf("metric=%s field=%s ",
 		strings.Replace(name, " ", "_", -1),
 		strings.Replace(fieldName, " ", "_", -1),
@@ -128,6 +134,12 @@ func serializeMetricFieldSeparate(name, fieldName string) string {
 }
 
 func serializeMetricIncludeField(name, fieldName string) string {
+	if fieldName == "" {
+		return fmt.Sprintf("metric=%s ",
+			strings.Replace(name, " ", "_", -1),
+		)
+	}
+
 	return fmt.Sprintf("metric=%s_%s ",
 		strings.Replace(name, " ", "_", -1),
 		strings.Replace(fieldName, " ", "_", -1),
@@ -139,6 +151,8 @@ func formatValue(fieldValue interface{}) string {
 	case bool:
 		// Print bools as 0s and 1s
 		return fmt.Sprintf("%d", bool2int(v))
+	case float64, float32:
+		return fmt.Sprintf("%f", v)
 	default:
 		return fmt.Sprintf("%v", v)
 	}

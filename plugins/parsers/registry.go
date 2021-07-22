@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/plugins/parsers/carbon2"
 	"github.com/influxdata/telegraf/plugins/parsers/collectd"
 	"github.com/influxdata/telegraf/plugins/parsers/dropwizard"
 	"github.com/influxdata/telegraf/plugins/parsers/form_urlencoded"
@@ -288,6 +289,8 @@ func NewParser(config *Config) (Parser, error) {
 		}
 	case "json_v2":
 		parser, err = NewJSONPathParser(config.JSONV2Config)
+	case "carbon2":
+		parser, err = NewCarbon2Parser()
 	default:
 		creator, found := Parsers[config.DataFormat]
 		if !found {
@@ -451,4 +454,8 @@ func NewJSONPathParser(jsonv2config []JSONV2Config) (Parser, error) {
 	return &json_v2.Parser{
 		Configs: configs,
 	}, nil
+}
+
+func NewCarbon2Parser() (Parser, error) {
+	return carbon2.Parser{}, nil
 }
