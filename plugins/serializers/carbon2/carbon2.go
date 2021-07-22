@@ -75,13 +75,32 @@ func (s *Serializer) createObject(metric telegraf.Metric) []byte {
 		name := s.sanitizeReplacer.Replace(metric.Name())
 
 		var value string
-		if v, ok := fieldValue.(bool); ok {
+		switch v := fieldValue.(type) {
+		case bool:
 			if v {
 				value = "1"
 			} else {
 				value = "0"
 			}
-		} else {
+		case float32:
+			// check if this is really an integer, make sure it ends with a trailing zero if so
+			var precision int
+			if v == float32(int32(v)) {
+				precision = 1
+			} else {
+				precision = -1
+			}
+			value = strconv.FormatFloat(float64(v), 'f', precision, 32)
+		case float64:
+			// check if this is really an integer, make sure it ends with a trailing zero if so
+			var precision int
+			if v == float64(int64(v)) {
+				precision = 1
+			} else {
+				precision = -1
+			}
+			value = strconv.FormatFloat(v, 'f', precision, 64)
+		default:
 			var err error
 			value, err = internal.ToString(fieldValue)
 			if err != nil {
@@ -90,7 +109,12 @@ func (s *Serializer) createObject(metric telegraf.Metric) []byte {
 			}
 		}
 
-		m.WriteString(fmt.Sprintf(s.template, strings.ReplaceAll(name, " ", "_"), strings.ReplaceAll(fieldName, " ", "_")))
+		if fieldName == "" {
+			m.WriteString(fmt.Sprintf("metric=%s ", strings.ReplaceAll(name, " ", "_")))
+		} else {
+			m.WriteString(fmt.Sprintf(s.template, strings.ReplaceAll(name, " ", "_"), strings.ReplaceAll(fieldName, " ", "_")))
+		}
+
 		for _, tag := range metric.TagList() {
 			m.WriteString(strings.ReplaceAll(tag.Key, " ", "_"))
 			m.WriteString("=")
