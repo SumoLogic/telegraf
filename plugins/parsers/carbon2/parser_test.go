@@ -217,9 +217,19 @@ _rawName=nite.nite-open-receiver-1.health.jmx.memoryUsage.pools.Compressed-Class
 			},
 		},
 		{
-			name:    "without_metric",
-			input:   []byte("className=HealthTrackerKafkaDataQueueWriter cluster=open-receiver deployment=nite fullClassName=com.sumologic.health.io.HealthTrackerKafkaDataQueueWriter mtype=count node=nite-open-receiver-1 service=open-receiver stat=p75  _primaryMetricType=carbon 0.00 1625855958"),
-			wantErr: true,
+			name:  "without_metric",
+			input: []byte("className=HealthTrackerKafkaDataQueueWriter cluster=open-receiver deployment=nite fullClassName=com.sumologic.health.io.HealthTrackerKafkaDataQueueWriter mtype=count node=nite-open-receiver-1 service=open-receiver stat=p75  _primaryMetricType=carbon 0.00 1625855958"),
+			wantedFunc: func() []telegraf.Metric {
+				return nil
+			},
+		},
+		{
+			name:    "NaN error 1 return ",
+			input:   []byte("className=HealthTrackerKafkaDataQueueWriter cluster=open-receiver deployment=nite fullClassName=com.sumologic.health.io.HealthTrackerKafkaDataQueueWriter metric=kafka.queue.alpha_health_tracker_incidents.offer.timer mtype=count node=nite-open-receiver-1 service=open-receiver stat=p75  _primaryMetricType=carbon NaN 1625855958"),
+			wantErr: false,
+			wantedFunc: func() []telegraf.Metric {
+				return nil
+			},
 		},
 	}
 
@@ -346,8 +356,13 @@ func TestParseLine(t *testing.T) {
 			},
 		},
 		{
-			name:    "without_metric",
+			name:    "metric without metric tag",
 			input:   "className=HealthTrackerKafkaDataQueueWriter cluster=open-receiver deployment=nite fullClassName=com.sumologic.health.io.HealthTrackerKafkaDataQueueWriter mtype=count node=nite-open-receiver-1 service=open-receiver stat=p75  _primaryMetricType=carbon 0.00 1625855958",
+			wantErr: true,
+		},
+		{
+			name:    "NaN error 1 return ",
+			input:   "className=HealthTrackerKafkaDataQueueWriter cluster=open-receiver deployment=nite fullClassName=com.sumologic.health.io.HealthTrackerKafkaDataQueueWriter metric=kafka.queue.alpha_health_tracker_incidents.offer.timer mtype=count node=nite-open-receiver-1 service=open-receiver stat=p75  _primaryMetricType=carbon NaN 1625855958",
 			wantErr: true,
 		},
 	}
@@ -357,17 +372,24 @@ func TestParseLine(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m, err := p.ParseLine(tc.input)
 			if tc.wantErr {
-				assert.Error(t, err)
-				return
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
 			}
 
-			require.NoError(t, err)
-
-			expected := tc.wantedFunc()
-			assert.Equalf(t, expected.Name(), m.Name(), "Metric name not as expected")
-			assert.Equal(t, expected.Fields(), m.Fields())
-			assert.Equal(t, expected.Tags(), m.Tags())
-			assert.Equal(t, expected.Time(), m.Time())
+			if tc.wantedFunc != nil {
+				expected := tc.wantedFunc()
+				if expected == nil {
+					assert.Nil(t, m)
+					return
+				}
+				assert.Equalf(t, expected.Name(), m.Name(), "Metric name not as expected")
+				assert.Equal(t, expected.Fields(), m.Fields())
+				assert.Equal(t, expected.Tags(), m.Tags())
+				assert.Equal(t, expected.Time(), m.Time())
+			} else {
+				assert.Nil(t, m)
+			}
 		})
 	}
 }
