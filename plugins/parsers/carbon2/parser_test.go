@@ -228,12 +228,10 @@ _rawName=nite.nite-open-receiver-1.health.jmx.memoryUsage.pools.Compressed-Class
 			wantedFunc: func() []telegraf.Metric {
 				return nil
 			},
-			wantErr: true,
 		},
 		{
-			name:    "NaN error 1 return ",
-			input:   []byte("className=HealthTrackerKafkaDataQueueWriter cluster=open-receiver deployment=nite fullClassName=com.sumologic.health.io.HealthTrackerKafkaDataQueueWriter metric=kafka.queue.alpha_health_tracker_incidents.offer.timer mtype=count node=nite-open-receiver-1 service=open-receiver stat=p75  _primaryMetricType=carbon NaN 1625855958"),
-			wantErr: true,
+			name:  "NaN error 1 return ",
+			input: []byte("className=HealthTrackerKafkaDataQueueWriter cluster=open-receiver deployment=nite fullClassName=com.sumologic.health.io.HealthTrackerKafkaDataQueueWriter metric=kafka.queue.alpha_health_tracker_incidents.offer.timer mtype=count node=nite-open-receiver-1 service=open-receiver stat=p75  _primaryMetricType=carbon NaN 1625855958"),
 			wantedFunc: func() []telegraf.Metric {
 				return nil
 			},
