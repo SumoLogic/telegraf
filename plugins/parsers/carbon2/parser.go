@@ -47,7 +47,8 @@ func (p Parser) Parse(buf []byte) ([]telegraf.Metric, error) {
 
 		m, err := parseLine(line)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse line: %s, err: %w", line, err)
+			fmt.Printf("E! Failed parsing Carbon2 line with metric: %s\n", line)
+			continue
 		}
 
 		metrics = append(metrics, m)
@@ -146,14 +147,14 @@ func parseBytesForValue(b []byte) (interface{}, error) {
 	if bytes.Contains(trimmed, []byte(".")) {
 		vf, err := strconv.ParseFloat(string(trimmed), 64)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse value: %s, err: %w", b, err)
+			return nil, fmt.Errorf("failed to parse value as float: %s, err: %w", b, err)
 		}
 		return vf, nil
 	}
 
 	vi, err := strconv.ParseInt(string(trimmed), 10, 64)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse value as int: %s, err: %w", b, err)
 	}
 	return vi, nil
 }
