@@ -202,7 +202,7 @@ func TestContentType(t *testing.T) {
 				s.SetSerializer(sr)
 				return s
 			},
-			expectedBody: []byte("metric=cpu field=value  42 0\n"),
+			expectedBody: []byte("metric=cpu field=value  42.000000 0\n"),
 		},
 		{
 			name: "carbon2 (data format = metric includes field) is supported",
@@ -216,7 +216,7 @@ func TestContentType(t *testing.T) {
 				s.SetSerializer(sr)
 				return s
 			},
-			expectedBody: []byte("metric=cpu_value  42 0\n"),
+			expectedBody: []byte("metric=cpu_value  42.000000 0\n"),
 		},
 		{
 			name: "graphite is supported",
@@ -303,7 +303,7 @@ func TestContentEncodingGzip(t *testing.T) {
 				payload, err := ioutil.ReadAll(body)
 				require.NoError(t, err)
 
-				assert.Equal(t, string(payload), "metric=cpu field=value  42 0\n")
+				assert.Equal(t, string(payload), "metric=cpu field=value  42.000000 0\n")
 
 				w.WriteHeader(http.StatusNoContent)
 			})
