@@ -28,11 +28,11 @@ func TestSerializeMetricFloat(t *testing.T) {
 	}{
 		{
 			format:   Carbon2FormatFieldSeparate,
-			expected: fmt.Sprintf("metric=cpu field=usage_idle cpu=cpu0  91.5 %d\n", now.Unix()),
+			expected: fmt.Sprintf("metric=cpu field=usage_idle cpu=cpu0  91.500000 %d\n", now.Unix()),
 		},
 		{
 			format:   Carbon2FormatMetricIncludesField,
-			expected: fmt.Sprintf("metric=cpu_usage_idle cpu=cpu0  91.5 %d\n", now.Unix()),
+			expected: fmt.Sprintf("metric=cpu_usage_idle cpu=cpu0  91.500000 %d\n", now.Unix()),
 		},
 	}
 
@@ -65,11 +65,11 @@ func TestSerializeMetricWithEmptyStringTag(t *testing.T) {
 	}{
 		{
 			format:   Carbon2FormatFieldSeparate,
-			expected: fmt.Sprintf("metric=cpu field=usage_idle cpu=null  91.5 %d\n", now.Unix()),
+			expected: fmt.Sprintf("metric=cpu field=usage_idle cpu=null  91.500000 %d\n", now.Unix()),
 		},
 		{
 			format:   Carbon2FormatMetricIncludesField,
-			expected: fmt.Sprintf("metric=cpu_usage_idle cpu=null  91.5 %d\n", now.Unix()),
+			expected: fmt.Sprintf("metric=cpu_usage_idle cpu=null  91.500000 %d\n", now.Unix()),
 		},
 	}
 
@@ -102,11 +102,11 @@ func TestSerializeWithSpaces(t *testing.T) {
 	}{
 		{
 			format:   Carbon2FormatFieldSeparate,
-			expected: fmt.Sprintf("metric=cpu_metric field=usage_idle_1 cpu_0=cpu_0  91.5 %d\n", now.Unix()),
+			expected: fmt.Sprintf("metric=cpu_metric field=usage_idle_1 cpu_0=cpu_0  91.500000 %d\n", now.Unix()),
 		},
 		{
 			format:   Carbon2FormatMetricIncludesField,
-			expected: fmt.Sprintf("metric=cpu_metric_usage_idle_1 cpu_0=cpu_0  91.5 %d\n", now.Unix()),
+			expected: fmt.Sprintf("metric=cpu_metric_usage_idle_1 cpu_0=cpu_0  91.500000 %d\n", now.Unix()),
 		},
 	}
 
@@ -314,7 +314,7 @@ func TestSerializeMetricIsProperlySanitized(t *testing.T) {
 				return metric.New("cpu=1", nil, fields, now)
 			},
 			format:      Carbon2FormatFieldSeparate,
-			expected:    fmt.Sprintf("metric=cpu:1 field=usage_idle  91.5 %d\n", now.Unix()),
+			expected:    fmt.Sprintf("metric=cpu:1 field=usage_idle  91.500000 %d\n", now.Unix()),
 			replaceChar: DefaultSanitizeReplaceChar,
 		},
 		{
@@ -325,7 +325,7 @@ func TestSerializeMetricIsProperlySanitized(t *testing.T) {
 				return metric.New("cpu=1", nil, fields, now)
 			},
 			format:      Carbon2FormatFieldSeparate,
-			expected:    fmt.Sprintf("metric=cpu_1 field=usage_idle  91.5 %d\n", now.Unix()),
+			expected:    fmt.Sprintf("metric=cpu_1 field=usage_idle  91.500000 %d\n", now.Unix()),
 			replaceChar: "_",
 		},
 		{
@@ -336,7 +336,7 @@ func TestSerializeMetricIsProperlySanitized(t *testing.T) {
 				return metric.New("cpu=1=tmp$custom", nil, fields, now)
 			},
 			format:      Carbon2FormatFieldSeparate,
-			expected:    fmt.Sprintf("metric=cpu:1:tmp:custom field=usage_idle  91.5 %d\n", now.Unix()),
+			expected:    fmt.Sprintf("metric=cpu:1:tmp:custom field=usage_idle  91.500000 %d\n", now.Unix()),
 			replaceChar: DefaultSanitizeReplaceChar,
 		},
 		{
@@ -347,7 +347,7 @@ func TestSerializeMetricIsProperlySanitized(t *testing.T) {
 				return metric.New("cpu=1=tmp$custom%namespace", nil, fields, now)
 			},
 			format:      Carbon2FormatFieldSeparate,
-			expected:    fmt.Sprintf("metric=cpu:1:tmp:custom:namespace field=usage_idle  91.5 %d\n", now.Unix()),
+			expected:    fmt.Sprintf("metric=cpu:1:tmp:custom:namespace field=usage_idle  91.500000 %d\n", now.Unix()),
 			replaceChar: DefaultSanitizeReplaceChar,
 		},
 		{
@@ -358,7 +358,7 @@ func TestSerializeMetricIsProperlySanitized(t *testing.T) {
 				return metric.New("cpu=1=tmp$custom%namespace", nil, fields, now)
 			},
 			format:      Carbon2FormatMetricIncludesField,
-			expected:    fmt.Sprintf("metric=cpu:1:tmp:custom:namespace_usage_idle  91.5 %d\n", now.Unix()),
+			expected:    fmt.Sprintf("metric=cpu:1:tmp:custom:namespace_usage_idle  91.500000 %d\n", now.Unix()),
 			replaceChar: DefaultSanitizeReplaceChar,
 		},
 		{
@@ -369,7 +369,7 @@ func TestSerializeMetricIsProperlySanitized(t *testing.T) {
 				return metric.New("cpu=1=tmp$custom%namespace", nil, fields, now)
 			},
 			format:      Carbon2FormatMetricIncludesField,
-			expected:    fmt.Sprintf("metric=cpu_1_tmp_custom_namespace_usage_idle  91.5 %d\n", now.Unix()),
+			expected:    fmt.Sprintf("metric=cpu_1_tmp_custom_namespace_usage_idle  91.500000 %d\n", now.Unix()),
 			replaceChar: "_",
 		},
 		{
