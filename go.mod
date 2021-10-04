@@ -58,7 +58,7 @@ require (
 	github.com/denisenkom/go-mssqldb v0.10.0
 	github.com/dgrijalva/jwt-go/v4 v4.0.0-preview1
 	github.com/dimchansky/utfbom v1.1.1
-	github.com/docker/docker v20.10.6+incompatible
+	github.com/docker/docker v20.10.7+incompatible
 	github.com/dynatrace-oss/dynatrace-metric-utils-go v0.2.0
 	github.com/eclipse/paho.mqtt.golang v1.2.0
 	github.com/ghodss/yaml v1.0.0
@@ -88,13 +88,13 @@ require (
 	github.com/gofrs/uuid v3.3.0+incompatible
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/geo v0.0.0-20190916061304-5b978397cfec
-	github.com/golang/protobuf v1.5.1
+	github.com/golang/protobuf v1.5.2
 	// github.com/gofrs/uuid v2.1.0+incompatible
 	// github.com/gogo/protobuf v1.3.1
 	// github.com/golang/geo v0.0.0-20190916061304-5b978397cfec
 	// github.com/golang/protobuf v1.4.2
 	github.com/golang/snappy v0.0.1
-	github.com/google/go-cmp v0.5.5
+	github.com/google/go-cmp v0.5.6
 	github.com/google/go-github/v32 v32.1.0
 	github.com/gopcua/opcua v0.1.13
 	github.com/gorilla/mux v1.7.3
@@ -193,8 +193,8 @@ require (
 	github.com/wvanbergen/kafka v0.0.0-20171203153745-e2edea948ddf
 	github.com/wvanbergen/kazoo-go v0.0.0-20180202103751-f72d8611297a // indirect
 	github.com/xdg/scram v0.0.0-20180814205039-7eeb5667e42c
-	github.com/youmark/pkcs8 v0.0.0-20201027041543-1326539a0a0a // indirect
 	github.com/yuin/gopher-lua v0.0.0-20180630135845-46796da1b0b4 // indirect
+	go.mongodb.org/mongo-driver v1.3.2
 	//
 	go.starlark.net v0.0.0-20210406145628-7a1108eaa012
 	go.uber.org/multierr v1.6.0 // indirect
