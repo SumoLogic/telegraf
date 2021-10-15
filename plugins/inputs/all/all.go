@@ -138,7 +138,12 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/openldap"
 	_ "github.com/influxdata/telegraf/plugins/inputs/openntpd"
 	_ "github.com/influxdata/telegraf/plugins/inputs/opensmtpd"
-	_ "github.com/influxdata/telegraf/plugins/inputs/opentelemetry"
+
+	// Disable opentelemetry input as this would cause a dependency conflict with
+	// OT distro and we are encouraging users to use OT builtin receivers for this
+	// purpose anyway.
+	// _ "github.com/influxdata/telegraf/plugins/inputs/opentelemetry"
+
 	_ "github.com/influxdata/telegraf/plugins/inputs/openweathermap"
 	_ "github.com/influxdata/telegraf/plugins/inputs/passenger"
 	_ "github.com/influxdata/telegraf/plugins/inputs/pf"
