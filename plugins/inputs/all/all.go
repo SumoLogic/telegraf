@@ -21,7 +21,11 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/ceph"
 	_ "github.com/influxdata/telegraf/plugins/inputs/cgroup"
 	_ "github.com/influxdata/telegraf/plugins/inputs/chrony"
-	_ "github.com/influxdata/telegraf/plugins/inputs/cisco_telemetry_mdt"
+
+	// Disable due to:
+	// # github.com/influxdata/telegraf/plugins/inputs/cisco_telemetry_mdt
+	// ../../../../../telegraf/telegraf/plugins/inputs/cisco_telemetry_mdt/cisco_telemetry_mdt.go:66:2: undefined: mdt_dialout.UnimplementedGRPCMdtDialoutServer
+	// _ "github.com/influxdata/telegraf/plugins/inputs/cisco_telemetry_mdt"
 	_ "github.com/influxdata/telegraf/plugins/inputs/clickhouse"
 	_ "github.com/influxdata/telegraf/plugins/inputs/cloud_pubsub"
 	_ "github.com/influxdata/telegraf/plugins/inputs/cloud_pubsub_push"
@@ -169,7 +173,18 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/redis"
 	_ "github.com/influxdata/telegraf/plugins/inputs/rethinkdb"
 	_ "github.com/influxdata/telegraf/plugins/inputs/riak"
-	_ "github.com/influxdata/telegraf/plugins/inputs/riemann_listener"
+
+	// Disable due to:
+	// # github.com/influxdata/telegraf/plugins/inputs/riemann_listener
+	// ../../../../../telegraf/telegraf/plugins/inputs/riemann_listener/riemann_listener.go:202:27: cannot use messagePb (type *"github.com/riemann/riemann-go-client/proto".Msg) as type protoreflect.ProtoMessage in argument to "google.golang.org/protobuf/proto".Unmarshal:
+	// *"github.com/riemann/riemann-go-client/proto".Msg does not implement protoreflect.ProtoMessage (missing ProtoReflect method)
+	// ../../../../../telegraf/telegraf/plugins/inputs/riemann_listener/riemann_listener.go:235:34: cannot use message (type *"github.com/riemann/riemann-go-client/proto".Msg) as type protoreflect.ProtoMessage in argument to "google.golang.org/protobuf/proto".Marshal:
+	// *"github.com/riemann/riemann-go-client/proto".Msg does not implement protoreflect.ProtoMessage (missing ProtoReflect method)
+	// ../../../../../telegraf/telegraf/plugins/inputs/riemann_listener/riemann_listener.go:258:34: cannot use message (type *"github.com/riemann/riemann-go-client/proto".Msg) as type protoreflect.ProtoMessage in argument to "google.golang.org/protobuf/proto".Marshal:
+	// *"github.com/riemann/riemann-go-client/proto".Msg does not implement protoreflect.ProtoMessage (missing ProtoReflect method)
+	// # github.com/influxdata/telegraf/plugins/inputs/cisco_telemetry_mdt
+	// ../../../../../telegraf/telegraf/plugins/inputs/cisco_telemetry_mdt/cisco_telemetry_mdt.go:66:2: undefined: mdt_dialout.UnimplementedGRPCMdtDialoutServer
+	// _ "github.com/influxdata/telegraf/plugins/inputs/riemann_listener"
 	_ "github.com/influxdata/telegraf/plugins/inputs/salesforce"
 	_ "github.com/influxdata/telegraf/plugins/inputs/sensors"
 	_ "github.com/influxdata/telegraf/plugins/inputs/sflow"
