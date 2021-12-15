@@ -204,7 +204,7 @@ func (s *Serializer) SerializeBatch(metrics []telegraf.Metric) ([]byte, error) {
 	}
 
 	var promTS = make([]prompb.TimeSeries, len(entries))
-	var i int
+	var i int64 = 0
 	for _, promts := range entries {
 		promTS[i] = promts
 		i++
@@ -273,7 +273,6 @@ func (s *Serializer) createLabels(metric telegraf.Metric) []prompb.Label {
 			continue
 		}
 
-		// remove tags with empty values
 		if tag.Value == "" {
 			continue
 		}

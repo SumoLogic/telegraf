@@ -270,10 +270,13 @@
   # [[postgresql.servers]]
   # address = "influx@remoteserver"
 
+# NOTE: disable in order to simplify dependencies. Users should use prometheus
+# receiver in OT.
+# 
 # Read metrics from one or many prometheus clients
-[[inputs.prometheus]]
+# [[inputs.prometheus]]
   # An array of urls to scrape metrics from.
-  urls = ["http://localhost:9100/metrics"]
+  # urls = ["http://localhost:9100/metrics"]
 
 # Read metrics from one or many RabbitMQ servers via the management API
 [[inputs.rabbitmq]]
