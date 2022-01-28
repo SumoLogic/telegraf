@@ -1,7 +1,7 @@
 package all
 
 import (
-	//Blank imports for plugins to register themselves
+	// Blank imports for plugins to register themselves
 	_ "github.com/influxdata/telegraf/plugins/inputs/activemq"
 	_ "github.com/influxdata/telegraf/plugins/inputs/aerospike"
 	_ "github.com/influxdata/telegraf/plugins/inputs/aliyuncms"
@@ -141,7 +141,6 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/openntpd"
 	_ "github.com/influxdata/telegraf/plugins/inputs/opensmtpd"
 	_ "github.com/influxdata/telegraf/plugins/inputs/openstack"
-	_ "github.com/influxdata/telegraf/plugins/inputs/opentelemetry"
 	_ "github.com/influxdata/telegraf/plugins/inputs/openweathermap"
 	_ "github.com/influxdata/telegraf/plugins/inputs/passenger"
 	_ "github.com/influxdata/telegraf/plugins/inputs/pf"
