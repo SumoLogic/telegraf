@@ -41,7 +41,6 @@ require (
 	github.com/bmatcuk/doublestar/v3 v3.0.0
 	github.com/boschrexroth/ctrlx-datalayer-golang v1.3.0
 	github.com/caio/go-tdigest v3.1.0+incompatible
-	github.com/cisco-ie/nx-telemetry-proto v0.0.0-20230117155933-f64c045c77df
 	github.com/compose-spec/compose-go v1.16.0
 	github.com/coreos/go-semver v0.3.1
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f
