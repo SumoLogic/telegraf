@@ -202,7 +202,16 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/win_eventlog"
 	_ "github.com/influxdata/telegraf/plugins/inputs/win_perf_counters"
 	_ "github.com/influxdata/telegraf/plugins/inputs/win_services"
-	_ "github.com/influxdata/telegraf/plugins/inputs/wireguard"
+
+	// Dependency conflict:
+	//
+	// imports\n\tgithub.com/influxdata/telegraf/plugins/inputs/wireguard
+	// imports\n\tgolang.zx2c4.com/wireguard/wgctrl
+	// imports\n\tgolang.zx2c4.com/wireguard/wgctrl/internal/wguser
+	// imports\n\tgolang.zx2c4.com/wireguard/ipc/namedpipe:
+	//   package golang.zx2c4.com/wireguard/ipc/namedpipe provided by golang.zx2c4.com/wireguard at latest version v0.0.0-20220117163742-e0b8f11489c5 but not at required version v0.0.20200121
+	// _ "github.com/influxdata/telegraf/plugins/inputs/wireguard"
+	//
 	_ "github.com/influxdata/telegraf/plugins/inputs/wireless"
 	_ "github.com/influxdata/telegraf/plugins/inputs/x509_cert"
 	_ "github.com/influxdata/telegraf/plugins/inputs/zfs"
