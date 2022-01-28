@@ -162,23 +162,22 @@ require (
 	github.com/vmware/govmomi v0.37.2
 	github.com/x448/float16 v0.8.4
 	github.com/xdg/scram v1.0.5
-	github.com/yuin/goldmark v1.6.0
-	go.mongodb.org/mongo-driver v1.14.0
-	go.starlark.net v0.0.0-20240520160348-046347dcd104
-	go.step.sm/crypto v0.47.1
-	golang.org/x/crypto v0.24.0
-	golang.org/x/mod v0.18.0
-	golang.org/x/net v0.26.0
-	golang.org/x/oauth2 v0.21.0
-	golang.org/x/sync v0.7.0
-	golang.org/x/sys v0.21.0
-	golang.org/x/term v0.21.0
-	golang.org/x/text v0.16.0
+	github.com/yuin/goldmark v1.5.6
+	go.mongodb.org/mongo-driver v1.12.1
+	go.starlark.net v0.0.0-20220328144851-d1966c6b9fcd
+	golang.org/x/crypto v0.14.0
+	golang.org/x/mod v0.13.0
+	golang.org/x/net v0.17.0
+	golang.org/x/oauth2 v0.13.0
+	golang.org/x/sync v0.4.0
+	golang.org/x/sys v0.13.0
+	golang.org/x/term v0.13.0
+	golang.org/x/text v0.13.0
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20211230205640-daad0b7ba671
-	google.golang.org/api v0.187.0
-	google.golang.org/genproto/googleapis/api v0.0.0-20240617180043-68d350f18fd4
-	google.golang.org/grpc v1.64.1
-	google.golang.org/protobuf v1.34.2
+	google.golang.org/api v0.147.0
+	google.golang.org/genproto/googleapis/api v0.0.0-20231002182017-d307bd883b97
+	google.golang.org/grpc v1.58.2
+	google.golang.org/protobuf v1.31.0
 	gopkg.in/gorethink/gorethink.v3 v3.0.5
 	gopkg.in/olivere/elastic.v5 v5.0.86
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7
@@ -328,7 +327,7 @@ require (
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/jmhodges/clock v1.2.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
-	github.com/josharian/native v1.1.0 // indirect
+	github.com/josharian/native v1.0.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/asmfmt v1.3.2 // indirect
@@ -341,13 +340,11 @@ require (
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-ieproxy v0.0.11 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mattn/go-ieproxy v0.0.1 // indirect
+	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/mdlayher/genetlink v1.2.0 // indirect
-	github.com/mdlayher/netlink v1.7.2 // indirect
-	github.com/mdlayher/socket v0.5.1 // indirect
-	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
-	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
+	github.com/mdlayher/netlink v1.6.0 // indirect
+	github.com/mdlayher/socket v0.2.3 // indirect
 	github.com/minio/highwayhash v1.0.2 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
@@ -422,13 +419,13 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/exp v0.0.0-20240529005216-23cca8864a10 // indirect
-	golang.org/x/time v0.5.0 // indirect
-	golang.org/x/tools v0.22.0 // indirect
-	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
+	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
+	golang.org/x/time v0.3.0 // indirect
+	golang.org/x/tools v0.13.0 // indirect
+	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	golang.zx2c4.com/wireguard v0.0.0-20211209221555-9c9e7e272434 // indirect
-	google.golang.org/genproto v0.0.0-20240624140628-dc46fd24d27d // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240624140628-dc46fd24d27d // indirect
+	google.golang.org/appengine v1.6.7 // indirect
+	gopkg.in/errgo.v1 v1.0.1 // indirect
 	gopkg.in/fatih/pool.v2 v2.0.0 // indirect
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
@@ -436,14 +433,17 @@ require (
 	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	honnef.co/go/tools v0.2.2 // indirect
-	k8s.io/klog/v2 v2.120.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
-	k8s.io/utils v0.0.0-20240502163921-fe8a2dddb1d0 // indirect
-	modernc.org/gc/v3 v3.0.0-20240107210532-573471604cb6 // indirect
-	modernc.org/libc v1.50.9 // indirect
-	modernc.org/mathutil v1.6.0 // indirect
-	modernc.org/memory v1.8.0 // indirect
-	modernc.org/strutil v1.2.0 // indirect
+	k8s.io/klog/v2 v2.100.1 // indirect
+	k8s.io/kube-openapi v0.0.0-20230717233707-2695361300d9 // indirect
+	k8s.io/utils v0.0.0-20230711102312-30195339c3c7 // indirect
+	lukechampine.com/uint128 v1.2.0 // indirect
+	modernc.org/cc/v3 v3.40.0 // indirect
+	modernc.org/ccgo/v3 v3.16.13 // indirect
+	modernc.org/libc v1.22.5 // indirect
+	modernc.org/mathutil v1.5.0 // indirect
+	modernc.org/memory v1.5.0 // indirect
+	modernc.org/opt v0.1.3 // indirect
+	modernc.org/strutil v1.1.3 // indirect
 	modernc.org/token v1.1.0 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
