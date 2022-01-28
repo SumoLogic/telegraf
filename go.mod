@@ -62,8 +62,6 @@ require (
 	github.com/harlow/kinesis-consumer v0.3.6-0.20210911031324-5a873d6e9fec
 	github.com/hashicorp/consul/api v1.12.0
 	github.com/influxdata/go-syslog/v3 v3.0.0
-	github.com/influxdata/influxdb-observability/common v0.2.10
-	github.com/influxdata/influxdb-observability/otel2influx v0.2.10
 	github.com/influxdata/line-protocol/v2 v2.2.1
 	github.com/influxdata/tail v1.0.1-0.20210707231403-b283181d1fa7
 	github.com/influxdata/toml v0.0.0-20190415235208-270119a8ce65
@@ -112,10 +110,6 @@ require (
 	github.com/wvanbergen/kafka v0.0.0-20171203153745-e2edea948ddf
 	github.com/xdg/scram v1.0.3
 	go.mongodb.org/mongo-driver v1.8.3
-	go.opentelemetry.io/collector/model v0.44.0
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v0.27.0
-	go.opentelemetry.io/otel/metric v0.27.0
-	go.opentelemetry.io/otel/sdk/metric v0.27.0
 	go.starlark.net v0.0.0-20210406145628-7a1108eaa012
 	golang.org/x/net v0.0.0-20220127200216-cd36cc0744dd
 	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
@@ -175,7 +169,6 @@ require (
 	github.com/awslabs/kinesis-aggregation/go v0.0.0-20210630091500-54e17340d32f // indirect
 	github.com/bitly/go-hostpool v0.1.0 // indirect
 	github.com/cenkalti/backoff v2.2.1+incompatible // indirect
-	github.com/cenkalti/backoff/v4 v4.1.2 // indirect
 	github.com/cloudflare/golz4 v0.0.0-20150217214814-ef862a3cdc58 // indirect
 	github.com/containerd/cgroups v1.0.1 // indirect
 	github.com/containerd/containerd v1.5.9 // indirect
@@ -189,15 +182,12 @@ require (
 	github.com/eapache/go-resiliency v1.2.0 // indirect
 	github.com/eapache/go-xerial-snappy v0.0.0-20180814174437-776d5712da21 // indirect
 	github.com/eapache/queue v1.1.0 // indirect
-	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.1 // indirect
-	github.com/go-logr/logr v1.2.2 // indirect
-	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/go-logr/logr v1.2.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
-	github.com/go-stack/stack v1.8.1 // indirect
+	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/goburrow/modbus v0.1.0 // indirect
 	github.com/goburrow/serial v0.1.0 // indirect
-	github.com/gofrs/uuid v4.2.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20190719163853-cb61b32ac6fe // indirect
 	github.com/golang-sql/sqlexp v0.0.0-20170517235910-f1bb20e5a188 // indirect
@@ -209,8 +199,7 @@ require (
 	github.com/googleapis/gax-go/v2 v2.1.1 // indirect
 	github.com/googleapis/gnostic v0.5.5 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
-	github.com/grid-x/serial v0.0.0-20211107191517-583c7356b3aa // indirect
-	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
+	github.com/grid-x/serial v0.0.0-20191104121038-e24bc9bf6f08 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.1 // indirect
 	github.com/hashicorp/go-hclog v0.16.2 // indirect
@@ -293,13 +282,6 @@ require (
 	github.com/yuin/gopher-lua v0.0.0-20200816102855-ee81675732da // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	go.opentelemetry.io/otel v1.4.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.4.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric v0.27.0 // indirect
-	go.opentelemetry.io/otel/internal/metric v0.27.0 // indirect
-	go.opentelemetry.io/otel/sdk v1.4.0 // indirect
-	go.opentelemetry.io/otel/trace v1.4.0 // indirect
-	go.opentelemetry.io/proto/otlp v0.12.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.0.0-20220214200702-86341886e292 // indirect
