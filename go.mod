@@ -67,8 +67,6 @@ require (
 	github.com/harlow/kinesis-consumer v0.3.6-0.20211204214318-c2b9f79d7ab6
 	github.com/hashicorp/consul/api v1.15.2
 	github.com/influxdata/go-syslog/v3 v3.0.0
-	github.com/influxdata/influxdb-observability/common v0.2.30
-	github.com/influxdata/influxdb-observability/otel2influx v0.2.30
 	github.com/influxdata/line-protocol/v2 v2.2.1
 	github.com/influxdata/tail v1.0.1-0.20210707231403-b283181d1fa7
 	github.com/influxdata/toml v0.0.0-20190415235208-270119a8ce65
@@ -124,9 +122,6 @@ require (
 	github.com/xdg/scram v1.0.5
 	github.com/yuin/goldmark v1.5.2
 	go.mongodb.org/mongo-driver v1.10.2
-	go.opentelemetry.io/collector/pdata v0.63.0
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v0.32.1
-	go.opentelemetry.io/otel/sdk/metric v0.32.1
 	go.starlark.net v0.0.0-20220328144851-d1966c6b9fcd
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
 	golang.org/x/net v0.0.0-20221014081412-f15817d10f9b
@@ -149,10 +144,7 @@ require (
 	modernc.org/sqlite v1.19.2
 )
 
-require (
-	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.13.6 // indirect
-	go.opentelemetry.io/otel/metric v0.32.1 // indirect
-)
+require github.com/aws/aws-sdk-go-v2/service/ssooidc v1.13.6 // indirect
 
 require (
 	cloud.google.com/go v0.104.0 // indirect
@@ -213,7 +205,6 @@ require (
 	github.com/frankban/quicktest v1.14.3 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.4 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
-	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-macaroon-bakery/macaroonpb v1.0.0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
@@ -234,7 +225,6 @@ require (
 	github.com/googleapis/gax-go/v2 v2.6.0 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/grid-x/serial v0.0.0-20211107191517-583c7356b3aa // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0 // indirect
 	github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
@@ -332,12 +322,6 @@ require (
 	github.com/yuin/gopher-lua v0.0.0-20200816102855-ee81675732da // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	go.opentelemetry.io/otel v1.10.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.10.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/otlpmetric v0.32.1 // indirect
-	go.opentelemetry.io/otel/sdk v1.10.0 // indirect
-	go.opentelemetry.io/otel/trace v1.10.0 // indirect
-	go.opentelemetry.io/proto/otlp v0.19.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	golang.org/x/crypto v0.0.0-20220926161630-eccd6366d1be // indirect
