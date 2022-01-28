@@ -87,7 +87,6 @@ require (
 	github.com/prometheus/common v0.32.1
 	github.com/prometheus/procfs v0.7.3
 	github.com/prometheus/prometheus v1.8.2-0.20210430082741-2a4b8e12bbf2
-	github.com/riemann/riemann-go-client v0.5.0
 	github.com/safchain/ethtool v0.0.0-20200218184317-f459e2d13664
 	github.com/shirou/gopsutil/v3 v3.21.12
 	github.com/showwin/speedtest-go v1.1.4
@@ -162,7 +161,6 @@ require (
 	github.com/onsi/gomega v1.10.4 // indirect
 	github.com/rogpeppe/go-internal v1.6.2 // indirect
 	gonum.org/v1/gonum v0.7.0 // indirect
-	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637 // indirect
 )
 
 require (
