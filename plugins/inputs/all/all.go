@@ -167,7 +167,18 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/redis_sentinel"
 	_ "github.com/influxdata/telegraf/plugins/inputs/rethinkdb"
 	_ "github.com/influxdata/telegraf/plugins/inputs/riak"
-	_ "github.com/influxdata/telegraf/plugins/inputs/riemann_listener"
+
+	// Dependency conflict:
+	// # github.com/influxdata/telegraf/plugins/inputs/riemann_listener
+	// ../../../../telegraf/telegraf/plugins/inputs/riemann_listener/riemann_listener.go:194:27: cannot use messagePb (type *"github.com/riemann/riemann-go-client/proto".Msg) as type protoreflect.ProtoMessage in argument to "google.golang.org/protobuf/proto".Unmarshal:
+	// *"github.com/riemann/riemann-go-client/proto".Msg does not implement protoreflect.ProtoMessage (missing ProtoReflect method)
+	// ../../../../telegraf/telegraf/plugins/inputs/riemann_listener/riemann_listener.go:227:34: cannot use message (type *"github.com/riemann/riemann-go-client/proto".Msg) as type protoreflect.ProtoMessage in argument to "google.golang.org/protobuf/proto".Marshal:
+	// *"github.com/riemann/riemann-go-client/proto".Msg does not implement protoreflect.ProtoMessage (missing ProtoReflect method)
+	// ../../../../telegraf/telegraf/plugins/inputs/riemann_listener/riemann_listener.go:250:34: cannot use message (type *"github.com/riemann/riemann-go-client/proto".Msg) as type protoreflect.ProtoMessage in argument to "google.golang.org/protobuf/proto".Marshal:
+	// *"github.com/riemann/riemann-go-client/proto".Msg does not implement protoreflect.ProtoMessage (missing ProtoReflect method)
+	//
+	// _ "github.com/influxdata/telegraf/plugins/inputs/riemann_listener"
+
 	_ "github.com/influxdata/telegraf/plugins/inputs/salesforce"
 	_ "github.com/influxdata/telegraf/plugins/inputs/sensors"
 	_ "github.com/influxdata/telegraf/plugins/inputs/sflow"
