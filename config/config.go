@@ -36,12 +36,16 @@ import (
 
 var (
 	// Default sections
-	sectionDefaults = []string{"global_tags", "agent", "outputs",
-		"processors", "aggregators", "inputs"}
+	sectionDefaults = []string{
+		"global_tags", "agent", "outputs",
+		"processors", "aggregators", "inputs",
+	}
 
 	// Default input plugins
-	inputDefaults = []string{"cpu", "mem", "swap", "system", "kernel",
-		"processes", "disk", "diskio"}
+	inputDefaults = []string{
+		"cpu", "mem", "swap", "system", "kernel",
+		"processes", "disk", "diskio",
+	}
 
 	// Default output plugins
 	outputDefaults = []string{"influxdb"}
@@ -301,6 +305,7 @@ var header = `# Telegraf Configuration
 # for numbers and booleans they should be plain (ie, ${INT_VAR}, ${BOOL_VAR})
 
 `
+
 var globalTagsConfig = `
 # Global tags can be specified here in key="value" format.
 [global_tags]
@@ -310,6 +315,7 @@ var globalTagsConfig = `
   # user = "$USER"
 
 `
+
 var agentConfig = `
 # Configuration for telegraf agent
 [agent]
@@ -1421,7 +1427,7 @@ func (c *Config) getParserConfig(name string, tbl *ast.Table) (*parsers.Config, 
 	c.getFieldString(tbl, "dropwizard_tags_path", &pc.DropwizardTagsPath)
 	c.getFieldStringMap(tbl, "dropwizard_tag_paths", &pc.DropwizardTagPathsMap)
 
-	//for grok data_format
+	// for grok data_format
 	c.getFieldStringSlice(tbl, "grok_named_patterns", &pc.GrokNamedPatterns)
 	c.getFieldStringSlice(tbl, "grok_patterns", &pc.GrokPatterns)
 	c.getFieldString(tbl, "grok_custom_patterns", &pc.GrokCustomPatterns)
@@ -1429,7 +1435,7 @@ func (c *Config) getParserConfig(name string, tbl *ast.Table) (*parsers.Config, 
 	c.getFieldString(tbl, "grok_timezone", &pc.GrokTimezone)
 	c.getFieldString(tbl, "grok_unique_timestamp", &pc.GrokUniqueTimestamp)
 
-	//for csv parser
+	// for csv parser
 	c.getFieldStringSlice(tbl, "csv_column_names", &pc.CSVColumnNames)
 	c.getFieldStringSlice(tbl, "csv_column_types", &pc.CSVColumnTypes)
 	c.getFieldStringSlice(tbl, "csv_tag_columns", &pc.CSVTagColumns)
@@ -1449,7 +1455,7 @@ func (c *Config) getParserConfig(name string, tbl *ast.Table) (*parsers.Config, 
 
 	c.getFieldString(tbl, "value_field_name", &pc.ValueFieldName)
 
-	//for XPath parser family
+	// for XPath parser family
 	if choice.Contains(pc.DataFormat, []string{"xml", "xpath_json", "xpath_msgpack", "xpath_protobuf"}) {
 		c.getFieldString(tbl, "xpath_protobuf_file", &pc.XPathProtobufFile)
 		c.getFieldString(tbl, "xpath_protobuf_type", &pc.XPathProtobufType)
@@ -1483,7 +1489,7 @@ func (c *Config) getParserConfig(name string, tbl *ast.Table) (*parsers.Config, 
 		}
 	}
 
-	//for JSONPath parser
+	// for JSONPath parser
 	if node, ok := tbl.Fields["json_v2"]; ok {
 		if metricConfigs, ok := node.([]*ast.Table); ok {
 			pc.JSONV2Config = make([]parsers.JSONV2Config, len(metricConfigs))
@@ -1590,29 +1596,13 @@ func (c *Config) buildSerializer(tbl *ast.Table) (serializers.Serializer, error)
 	c.getFieldString(tbl, "prefix", &sc.Prefix)
 	c.getFieldString(tbl, "template", &sc.Template)
 	c.getFieldStringSlice(tbl, "templates", &sc.Templates)
-	c.getFieldString(tbl, "carbon2_format", &sc.Carbon2Format)
-	c.getFieldString(tbl, "carbon2_sanitize_replace_char", &sc.Carbon2SanitizeReplaceChar)
 	c.getFieldInt(tbl, "influx_max_line_bytes", &sc.InfluxMaxLineBytes)
 
 	c.getFieldBool(tbl, "influx_sort_fields", &sc.InfluxSortFields)
 	c.getFieldBool(tbl, "influx_uint_support", &sc.InfluxUintSupport)
-	c.getFieldBool(tbl, "graphite_tag_support", &sc.GraphiteTagSupport)
-	c.getFieldString(tbl, "graphite_tag_sanitize_mode", &sc.GraphiteTagSanitizeMode)
-
-	c.getFieldString(tbl, "graphite_separator", &sc.GraphiteSeparator)
 
 	c.getFieldDuration(tbl, "json_timestamp_units", &sc.TimestampUnits)
 	c.getFieldString(tbl, "json_timestamp_format", &sc.TimestampFormat)
-
-	c.getFieldBool(tbl, "splunkmetric_hec_routing", &sc.HecRouting)
-	c.getFieldBool(tbl, "splunkmetric_multimetric", &sc.SplunkmetricMultiMetric)
-
-	c.getFieldStringSlice(tbl, "wavefront_source_override", &sc.WavefrontSourceOverride)
-	c.getFieldBool(tbl, "wavefront_use_strict", &sc.WavefrontUseStrict)
-
-	c.getFieldBool(tbl, "prometheus_export_timestamp", &sc.PrometheusExportTimestamp)
-	c.getFieldBool(tbl, "prometheus_sort_metrics", &sc.PrometheusSortMetrics)
-	c.getFieldBool(tbl, "prometheus_string_as_label", &sc.PrometheusStringAsLabel)
 
 	if c.hasErrs() {
 		return nil, c.firstErr()
