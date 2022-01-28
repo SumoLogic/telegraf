@@ -21,7 +21,12 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/ceph"
 	_ "github.com/influxdata/telegraf/plugins/inputs/cgroup"
 	_ "github.com/influxdata/telegraf/plugins/inputs/chrony"
-	_ "github.com/influxdata/telegraf/plugins/inputs/cisco_telemetry_mdt"
+
+	// Dependency conflict:
+	// # github.com/influxdata/telegraf/plugins/inputs/cisco_telemetry_mdt
+	// ../../../../telegraf/telegraf/plugins/inputs/cisco_telemetry_mdt/cisco_telemetry_mdt.go:66:2: undefined: mdt_dialout.UnimplementedGRPCMdtDialoutServer
+	// _ "github.com/influxdata/telegraf/plugins/inputs/cisco_telemetry_mdt"
+	//
 	_ "github.com/influxdata/telegraf/plugins/inputs/clickhouse"
 	_ "github.com/influxdata/telegraf/plugins/inputs/cloud_pubsub"
 	_ "github.com/influxdata/telegraf/plugins/inputs/cloud_pubsub_push"
