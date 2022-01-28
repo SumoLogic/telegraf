@@ -125,7 +125,6 @@ require (
 	github.com/prometheus/procfs v0.11.0
 	github.com/prometheus/prometheus v0.46.0
 	github.com/rabbitmq/amqp091-go v1.8.1
-	github.com/riemann/riemann-go-client v0.5.1-0.20211206220514-f58f10cdce16
 	github.com/robbiet480/go.nut v0.0.0-20220219091450-bd8f121e1fa1
 	github.com/robinson/gos7 v0.0.0-20231012111941-bdaa10e92e16
 	github.com/safchain/ethtool v0.3.0
@@ -401,7 +400,6 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/macaroon-bakery.v3 v3.0.0 // indirect
 	gopkg.in/macaroon.v2 v2.1.0 // indirect
-	gopkg.in/tomb.v2 v2.0.0-20161208151619-d5d1b5820637 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/klog/v2 v2.100.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20230717233707-2695361300d9 // indirect
