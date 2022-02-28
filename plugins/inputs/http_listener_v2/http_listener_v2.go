@@ -2,6 +2,7 @@ package http_listener_v2
 
 import (
 	"compress/gzip"
+	"context"
 	"crypto/subtle"
 	"crypto/tls"
 	"errors"
@@ -38,19 +39,20 @@ type TimeFunc func() time.Time
 
 // HTTPListenerV2 is an input plugin that collects external metrics sent via HTTP
 type HTTPListenerV2 struct {
-	ServiceAddress string            `toml:"service_address"`
-	Path           string            `toml:"path" deprecated:"1.20.0;use 'paths' instead"`
-	Paths          []string          `toml:"paths"`
-	PathTag        bool              `toml:"path_tag"`
-	Methods        []string          `toml:"methods"`
-	DataSource     string            `toml:"data_source"`
-	ReadTimeout    config.Duration   `toml:"read_timeout"`
-	WriteTimeout   config.Duration   `toml:"write_timeout"`
-	MaxBodySize    config.Size       `toml:"max_body_size"`
-	Port           int               `toml:"port"`
-	BasicUsername  string            `toml:"basic_username"`
-	BasicPassword  string            `toml:"basic_password"`
-	HTTPHeaderTags map[string]string `toml:"http_header_tags"`
+	ServiceAddress  string            `toml:"service_address"`
+	Path            string            `toml:"path" deprecated:"1.20.0;use 'paths' instead"`
+	Paths           []string          `toml:"paths"`
+	PathTag         bool              `toml:"path_tag"`
+	Methods         []string          `toml:"methods"`
+	DataSource      string            `toml:"data_source"`
+	ReadTimeout     config.Duration   `toml:"read_timeout"`
+	WriteTimeout    config.Duration   `toml:"write_timeout"`
+	ShutdownTimeout config.Duration   `toml:"shutdown_timeout"`
+	MaxBodySize     config.Size       `toml:"max_body_size"`
+	Port            int               `toml:"port"`
+	BasicUsername   string            `toml:"basic_username"`
+	BasicPassword   string            `toml:"basic_password"`
+	HTTPHeaderTags  map[string]string `toml:"http_header_tags"`
 
 	tlsint.ServerConfig
 	tlsConf *tls.Config
@@ -58,10 +60,11 @@ type HTTPListenerV2 struct {
 	TimeFunc
 	Log telegraf.Logger
 
-	wg    sync.WaitGroup
-	close chan struct{}
+	wg      sync.WaitGroup
+	metrics chan []telegraf.Metric
 
 	listener net.Listener
+	server   *http.Server
 
 	parsers.Parser
 	acc telegraf.Accumulator
@@ -84,6 +87,8 @@ const sampleConfig = `
   # read_timeout = "10s"
   ## maximum duration before timing out write of the response
   # write_timeout = "10s"
+  ## maximum duration before forcefully closing the HTTP server when shutting it down
+  # shutdown_timeout = "15s"
 
   ## Maximum allowed http request body size in bytes.
   ## 0 means to use the default of 524,288,000 bytes (500 mebibytes)
@@ -146,6 +151,9 @@ func (h *HTTPListenerV2) Start(acc telegraf.Accumulator) error {
 	if h.WriteTimeout < config.Duration(time.Second) {
 		h.WriteTimeout = config.Duration(time.Second * 10)
 	}
+	if h.ShutdownTimeout < config.Duration(time.Second) {
+		h.ShutdownTimeout = config.Duration(time.Second * 15)
+	}
 
 	// Append h.Path to h.Paths
 	if h.Path != "" && !choice.Contains(h.Path, h.Paths) {
@@ -154,16 +162,37 @@ func (h *HTTPListenerV2) Start(acc telegraf.Accumulator) error {
 
 	h.acc = acc
 
-	server := h.createHTTPServer()
+	h.server = h.createHTTPServer()
+
+	// This goroutine just moves data from the metrics channel to the accumulator
+	// It exists so we can select on writing to the metrics channel and handle cancellation correctly
+	// in the request handler.
+	go func() {
+		// Handle the case where the accumulator channel is closed while shutting down. We do this to
+		// avoid changing the accumulator API to allow for more graceful handling of this channel.
+		defer func() {
+			if err := recover(); err != nil {
+				h.Log.Error(err)
+			}
+		}()
+		for {
+			metrics, ok := <-h.metrics
+			if !ok {
+				return
+			}
+			for _, m := range metrics {
+				h.acc.AddMetric(m)
+			}
+		}
+	}()
 
 	h.wg.Add(1)
 	go func() {
 		defer h.wg.Done()
-		if err := server.Serve(h.listener); err != nil {
+		if err := h.server.Serve(h.listener); err != nil {
 			if !errors.Is(err, net.ErrClosed) {
 				h.Log.Errorf("Serve failed: %v", err)
 			}
-			close(h.close)
 		}
 	}()
 
@@ -184,11 +213,14 @@ func (h *HTTPListenerV2) createHTTPServer() *http.Server {
 
 // Stop cleans up all resources
 func (h *HTTPListenerV2) Stop() {
-	if h.listener != nil {
-		// Ignore the returned error as we cannot do anything about it anyway
-		//nolint:errcheck,revive
-		h.listener.Close()
+	if h.server != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(h.ShutdownTimeout))
+		defer cancel()
+		if err := h.server.Shutdown(ctx); err != nil {
+			h.Log.Errorf("server shutdown error: %v", err)
+		}
 	}
+	close(h.metrics)
 	h.wg.Wait()
 }
 
@@ -225,13 +257,6 @@ func (h *HTTPListenerV2) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 }
 
 func (h *HTTPListenerV2) serveWrite(res http.ResponseWriter, req *http.Request) {
-	select {
-	case <-h.close:
-		res.WriteHeader(http.StatusGone)
-		return
-	default:
-	}
-
 	// Check that the content length is not too large for us to handle.
 	if req.ContentLength > int64(h.MaxBodySize) {
 		if err := tooLarge(res); err != nil {
@@ -289,11 +314,12 @@ func (h *HTTPListenerV2) serveWrite(res http.ResponseWriter, req *http.Request) 
 		if h.PathTag {
 			m.AddTag(pathTag, req.URL.Path)
 		}
-
-		h.acc.AddMetric(m)
 	}
-
-	res.WriteHeader(http.StatusNoContent)
+	select {
+	case <-req.Context().Done():
+	case h.metrics <- metrics:
+		res.WriteHeader(http.StatusNoContent)
+	}
 }
 
 func (h *HTTPListenerV2) collectBody(res http.ResponseWriter, req *http.Request) ([]byte, bool) {
@@ -412,7 +438,7 @@ func init() {
 			Paths:          []string{"/telegraf"},
 			Methods:        []string{"POST", "PUT"},
 			DataSource:     body,
-			close:          make(chan struct{}),
+			metrics:        make(chan []telegraf.Metric),
 		}
 	})
 }
