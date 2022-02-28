@@ -16,7 +16,10 @@ import (
 	"github.com/golang/snappy"
 	"github.com/stretchr/testify/require"
 
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/agent"
 	"github.com/influxdata/telegraf/config"
+	"github.com/influxdata/telegraf/models"
 	"github.com/influxdata/telegraf/plugins/parsers"
 	"github.com/influxdata/telegraf/testutil"
 )
@@ -56,7 +59,7 @@ func newTestHTTPListenerV2() *HTTPListenerV2 {
 		TimeFunc:       time.Now,
 		MaxBodySize:    config.Size(70000),
 		DataSource:     "body",
-		close:          make(chan struct{}),
+		metrics:        make(chan []telegraf.Metric),
 	}
 	return listener
 }
@@ -79,7 +82,7 @@ func newTestHTTPSListenerV2() *HTTPListenerV2 {
 		Parser:         parser,
 		ServerConfig:   *pki.TLSServerConfig(),
 		TimeFunc:       time.Now,
-		close:          make(chan struct{}),
+		metrics:        make(chan []telegraf.Metric),
 	}
 
 	return listener
@@ -107,6 +110,25 @@ func createURL(listener *HTTPListenerV2, scheme string, path string, rawquery st
 	return u.String()
 }
 
+type TestMetricMaker struct {
+}
+
+func (tm *TestMetricMaker) Name() string {
+	return "TestPlugin"
+}
+
+func (tm *TestMetricMaker) LogName() string {
+	return tm.Name()
+}
+
+func (tm *TestMetricMaker) MakeMetric(metric telegraf.Metric) telegraf.Metric {
+	return metric
+}
+
+func (tm *TestMetricMaker) Log() telegraf.Logger {
+	return models.NewLogger("TestPlugin", "test", "")
+}
+
 func TestInvalidListenerConfig(t *testing.T) {
 	parser, _ := parsers.NewInfluxParser()
 
@@ -119,7 +141,7 @@ func TestInvalidListenerConfig(t *testing.T) {
 		TimeFunc:       time.Now,
 		MaxBodySize:    config.Size(70000),
 		DataSource:     "body",
-		close:          make(chan struct{}),
+		metrics:        make(chan []telegraf.Metric),
 	}
 
 	require.Error(t, listener.Init())
@@ -328,7 +350,7 @@ func TestWriteHTTPExactMaxBodySize(t *testing.T) {
 		Parser:         parser,
 		MaxBodySize:    config.Size(len(hugeMetric)),
 		TimeFunc:       time.Now,
-		close:          make(chan struct{}),
+		metrics:        make(chan []telegraf.Metric),
 	}
 
 	acc := &testutil.Accumulator{}
@@ -353,7 +375,7 @@ func TestWriteHTTPVerySmallMaxBody(t *testing.T) {
 		Parser:         parser,
 		MaxBodySize:    config.Size(4096),
 		TimeFunc:       time.Now,
-		close:          make(chan struct{}),
+		metrics:        make(chan []telegraf.Metric),
 	}
 
 	acc := &testutil.Accumulator{}
@@ -475,6 +497,69 @@ func TestWriteHTTPHighTraffic(t *testing.T) {
 
 	acc.Wait(25000)
 	require.Equal(t, int64(25000), int64(acc.NMetrics()))
+}
+
+func TestShutdown(t *testing.T) {
+	listener := newTestHTTPListenerV2()
+
+	// use a real accumulator with a channel, we want to check how shutdown behaves in respect to it
+	metrics := make(chan telegraf.Metric)
+	acc := agent.NewAccumulator(&TestMetricMaker{}, metrics)
+
+	require.NoError(t, listener.Init())
+	require.NoError(t, listener.Start(acc))
+
+	// make a request with some data
+	resp, err := http.Post(createURL(listener, "http", "/write", "db=mydb"), "", bytes.NewBuffer([]byte(testMsgNoNewline)))
+	if err != nil {
+		return
+	}
+	if err := resp.Body.Close(); err != nil {
+		return
+	}
+	if resp.StatusCode != 204 {
+		return
+	}
+
+	// stop the plugin and see if it gracefully handles the accumulator channel being closed
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		listener.Stop()
+	}()
+	<-metrics
+	wg.Wait()
+	close(metrics)
+}
+
+func TestShutdownTimeout(t *testing.T) {
+	listener := newTestHTTPListenerV2()
+	listener.ShutdownTimeout = config.Duration(time.Second)
+
+	// use a real accumulator with a channel, we want to check how shutdown behaves in respect to it
+	metrics := make(chan telegraf.Metric)
+	acc := agent.NewAccumulator(&TestMetricMaker{}, metrics)
+
+	require.NoError(t, listener.Init())
+	require.NoError(t, listener.Start(acc))
+
+	// make a request with some data
+	resp, err := http.Post(createURL(listener, "http", "/write", "db=mydb"), "", bytes.NewBuffer([]byte(testMsgNoNewline)))
+	if err != nil {
+		return
+	}
+	if err := resp.Body.Close(); err != nil {
+		return
+	}
+	if resp.StatusCode != 204 {
+		return
+	}
+
+	// stop the plugin and see if it exits even with a handler still blocked on writing to the accumulator
+
+	listener.Stop()
+	close(metrics)
 }
 
 func TestReceive404ForInvalidEndpoint(t *testing.T) {
