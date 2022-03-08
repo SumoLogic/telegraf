@@ -50,7 +50,6 @@ require (
 	github.com/google/go-cmp v0.5.7
 	github.com/google/go-github/v32 v32.1.0
 	github.com/gopcua/opcua v0.3.1
-	github.com/gophercloud/gophercloud v0.16.0
 	github.com/gorilla/mux v1.8.0
 	github.com/gosnmp/gosnmp v1.34.0
 	github.com/grid-x/modbus v0.0.0-20211113184042-7f2251c342c9
