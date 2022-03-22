@@ -47,22 +47,23 @@ type TimeFunc func() time.Time
 
 // HTTPListenerV2 is an input plugin that collects external metrics sent via HTTP
 type HTTPListenerV2 struct {
-	ServiceAddress string            `toml:"service_address"`
-	Path           string            `toml:"path" deprecated:"1.20.0;1.35.0;use 'paths' instead"`
-	Paths          []string          `toml:"paths"`
-	PathTag        bool              `toml:"path_tag"`
-	Methods        []string          `toml:"methods"`
-	HTTPHeaders    map[string]string `toml:"http_headers"`
-	DataSource     string            `toml:"data_source"`
-	ReadTimeout    config.Duration   `toml:"read_timeout"`
-	WriteTimeout   config.Duration   `toml:"write_timeout"`
-	ShutdownTimeout config.Duration   `toml:"shutdown_timeout"`
-	MaxBodySize    config.Size       `toml:"max_body_size"`
-	Port           int               `toml:"port"`
-	SuccessCode    int               `toml:"http_success_code"`
-	BasicUsername  string            `toml:"basic_username"`
-	BasicPassword  string            `toml:"basic_password"`
-	HTTPHeaderTags map[string]string `toml:"http_header_tags"`
+	ServiceAddress        string            `toml:"service_address"`
+	Path                  string            `toml:"path" deprecated:"1.20.0;use 'paths' instead"`
+	Paths                 []string          `toml:"paths"`
+	PathTag               bool              `toml:"path_tag"`
+	Methods               []string          `toml:"methods"`
+	HTTPHeaders           map[string]string `toml:"http_headers"`
+	DataSource            string            `toml:"data_source"`
+	ReadTimeout           config.Duration   `toml:"read_timeout"`
+	WriteTimeout          config.Duration   `toml:"write_timeout"`
+	ShutdownTimeout       config.Duration   `toml:"shutdown_timeout"`
+	RequestHandlerTimeout config.Duration   `toml:"request_handler_timeout"`
+	MaxBodySize           config.Size       `toml:"max_body_size"`
+	Port                  int               `toml:"port"`
+	SuccessCode           int               `toml:"http_success_code"`
+	BasicUsername         string            `toml:"basic_username"`
+	BasicPassword         string            `toml:"basic_password"`
+	HTTPHeaderTags        map[string]string `toml:"http_header_tags"`
 
 	tlsint.ServerConfig
 	tlsConf *tls.Config
@@ -106,6 +107,9 @@ func (h *HTTPListenerV2) Start(acc telegraf.Accumulator) error {
 	}
 	if h.ShutdownTimeout < config.Duration(time.Second) {
 		h.ShutdownTimeout = config.Duration(time.Second * 15)
+	}
+	if h.RequestHandlerTimeout < config.Duration(time.Second) {
+		h.RequestHandlerTimeout = config.Duration(time.Second * 5)
 	}
 
 	// Append h.Path to h.Paths
@@ -157,7 +161,7 @@ func (h *HTTPListenerV2) Start(acc telegraf.Accumulator) error {
 func (h *HTTPListenerV2) createHTTPServer() *http.Server {
 	return &http.Server{
 		Addr:         h.ServiceAddress,
-		Handler:      h,
+		Handler:      http.TimeoutHandler(h, time.Duration(h.RequestHandlerTimeout), "service temporarily unavailable"),
 		ReadTimeout:  time.Duration(h.ReadTimeout),
 		WriteTimeout: time.Duration(h.WriteTimeout),
 		TLSConfig:    h.tlsConf,
