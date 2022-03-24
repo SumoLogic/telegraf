@@ -2,11 +2,13 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/internal/snmp"
+	"github.com/influxdata/telegraf/logger"
 	"github.com/influxdata/telegraf/models"
 	"github.com/influxdata/telegraf/plugins/serializers/influx"
 )
@@ -25,6 +28,18 @@ type Agent struct {
 
 // NewAgent returns an Agent for the given Config.
 func NewAgent(cfg *config.Config) (*Agent, error) {
+	if len(cfg.Inputs) == 0 {
+		return nil, errors.New("Error: no inputs found, did you provide a valid config file?")
+	}
+
+	if int64(cfg.Agent.Interval) <= 0 {
+		return nil, fmt.Errorf("Agent interval must be positive, found %v", cfg.Agent.Interval)
+	}
+
+	if int64(cfg.Agent.FlushInterval) <= 0 {
+		return nil, fmt.Errorf("Agent flush_interval must be positive; found %v", cfg.Agent.FlushInterval)
+	}
+
 	a := &Agent{
 		Config: cfg,
 	}
@@ -187,6 +202,22 @@ func (a *Agent) Run(ctx context.Context) error {
 // RunWithChannel starts inputs and passes all gathered metrics into the passed
 // channel.
 func (a *Agent) RunWithChannel(ctx context.Context, out chan<- telegraf.Metric) error {
+	// Setup logging as configured.
+	telegraf.Debug = a.Config.Agent.Debug
+	logConfig := logger.LogConfig{
+		Debug:               telegraf.Debug,
+		Quiet:               a.Config.Agent.Quiet,
+		LogTarget:           a.Config.Agent.LogTarget,
+		Logfile:             a.Config.Agent.Logfile,
+		RotationInterval:    a.Config.Agent.LogfileRotationInterval,
+		RotationMaxSize:     a.Config.Agent.LogfileRotationMaxSize,
+		RotationMaxArchives: a.Config.Agent.LogfileRotationMaxArchives,
+		LogWithTimezone:     a.Config.Agent.LogWithTimezone,
+	}
+	logger.SetupLogging(logConfig)
+
+	log.Printf("I! Loaded inputs: %s", strings.Join(a.Config.InputNames(), " "))
+
 	log.Printf("I! [agent] Config: Interval:%v, Quiet:%#v, Hostname:%#v, "+
 		"Flush Interval:%v",
 		a.Config.Agent.Interval,
