@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/internal/snmp"
+	"github.com/influxdata/telegraf/logger"
 	"github.com/influxdata/telegraf/models"
 	"github.com/influxdata/telegraf/plugins/processors"
 	"github.com/influxdata/telegraf/plugins/serializers/influx"
@@ -210,6 +212,21 @@ func (a *Agent) Run(ctx context.Context) error {
 // RunWithChannel starts inputs and passes all gathered metrics into the passed
 // channel.
 func (a *Agent) RunWithChannel(ctx context.Context, out chan<- telegraf.Metric) error {
+	// Setup logging as configured.
+	logConfig := logger.Config{
+		Debug:               a.Config.Agent.Debug,
+		Quiet:               a.Config.Agent.Quiet,
+		LogTarget:           a.Config.Agent.LogTarget,
+		Logfile:             a.Config.Agent.Logfile,
+		RotationInterval:    time.Duration(a.Config.Agent.LogfileRotationInterval),
+		RotationMaxSize:     int64(a.Config.Agent.LogfileRotationMaxSize),
+		RotationMaxArchives: a.Config.Agent.LogfileRotationMaxArchives,
+		LogWithTimezone:     a.Config.Agent.LogWithTimezone,
+	}
+	logger.SetupLogging(logConfig)
+
+	log.Printf("I! Loaded inputs: %s", strings.Join(a.Config.InputNames(), " "))
+
 	log.Printf("I! [agent] Config: Interval:%v, Quiet:%#v, Hostname:%#v, "+
 		"Flush Interval:%v",
 		a.Config.Agent.Interval,
