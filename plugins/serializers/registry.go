@@ -9,11 +9,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/serializers/graphite"
 	"github.com/influxdata/telegraf/plugins/serializers/influx"
 	"github.com/influxdata/telegraf/plugins/serializers/json"
-	"github.com/influxdata/telegraf/plugins/serializers/msgpack"
-	"github.com/influxdata/telegraf/plugins/serializers/nowmetric"
-	"github.com/influxdata/telegraf/plugins/serializers/prometheus"
-	"github.com/influxdata/telegraf/plugins/serializers/prometheusremotewrite"
-	"github.com/influxdata/telegraf/plugins/serializers/splunkmetric"
 )
 
 // SerializerOutput is an interface for output plugins that are able to
@@ -92,30 +87,6 @@ type Config struct {
 
 	// Include HEC routing fields for splunkmetric output
 	HecRouting bool `toml:"hec_routing"`
-
-	// Enable Splunk MultiMetric output (Splunk 8.0+)
-	SplunkmetricMultiMetric bool `toml:"splunkmetric_multi_metric"`
-
-	// Point tags to use as the source name for Wavefront (if none found, host will be used).
-	WavefrontSourceOverride []string `toml:"wavefront_source_override"`
-
-	// Use Strict rules to sanitize metric and tag names from invalid characters for Wavefront
-	// When enabled forward slash (/) and comma (,) will be accepted
-	WavefrontUseStrict bool `toml:"wavefront_use_strict"`
-
-	// Convert "_" in prefixes to "." for Wavefront
-	WavefrontDisablePrefixConversion bool `toml:"wavefront_disable_prefix_conversion"`
-
-	// Include the metric timestamp on each sample.
-	PrometheusExportTimestamp bool `toml:"prometheus_export_timestamp"`
-
-	// Sort prometheus metric families and metric samples.  Useful for
-	// debugging.
-	PrometheusSortMetrics bool `toml:"prometheus_sort_metrics"`
-
-	// Output string fields as metric labels; when false string fields are
-	// discarded.
-	PrometheusStringAsLabel bool `toml:"prometheus_string_as_label"`
 }
 
 // NewSerializer a Serializer interface based on the given config.
@@ -129,62 +100,12 @@ func NewSerializer(config *Config) (Serializer, error) {
 		serializer, err = NewGraphiteSerializer(config.Prefix, config.Template, config.GraphiteTagSupport, config.GraphiteTagSanitizeMode, config.GraphiteSeparator, config.Templates)
 	case "json":
 		serializer, err = NewJSONSerializer(config.TimestampUnits, config.TimestampFormat)
-	case "splunkmetric":
-		serializer, err = NewSplunkmetricSerializer(config.HecRouting, config.SplunkmetricMultiMetric)
-	case "nowmetric":
-		serializer, err = NewNowSerializer()
 	case "carbon2":
 		serializer, err = NewCarbon2Serializer(config.Carbon2Format, config.Carbon2SanitizeReplaceChar)
-	case "prometheus":
-		serializer, err = NewPrometheusSerializer(config)
-	case "prometheusremotewrite":
-		serializer, err = NewPrometheusRemoteWriteSerializer(config)
-	case "msgpack":
-		serializer, err = NewMsgpackSerializer()
 	default:
 		err = fmt.Errorf("invalid data format: %s", config.DataFormat)
 	}
 	return serializer, err
-}
-
-func NewPrometheusRemoteWriteSerializer(config *Config) (Serializer, error) {
-	sortMetrics := prometheusremotewrite.NoSortMetrics
-	if config.PrometheusExportTimestamp {
-		sortMetrics = prometheusremotewrite.SortMetrics
-	}
-
-	stringAsLabels := prometheusremotewrite.DiscardStrings
-	if config.PrometheusStringAsLabel {
-		stringAsLabels = prometheusremotewrite.StringAsLabel
-	}
-
-	return prometheusremotewrite.NewSerializer(prometheusremotewrite.FormatConfig{
-		MetricSortOrder: sortMetrics,
-		StringHandling:  stringAsLabels,
-	})
-}
-
-func NewPrometheusSerializer(config *Config) (Serializer, error) {
-	exportTimestamp := prometheus.NoExportTimestamp
-	if config.PrometheusExportTimestamp {
-		exportTimestamp = prometheus.ExportTimestamp
-	}
-
-	sortMetrics := prometheus.NoSortMetrics
-	if config.PrometheusExportTimestamp {
-		sortMetrics = prometheus.SortMetrics
-	}
-
-	stringAsLabels := prometheus.DiscardStrings
-	if config.PrometheusStringAsLabel {
-		stringAsLabels = prometheus.StringAsLabel
-	}
-
-	return prometheus.NewSerializer(prometheus.FormatConfig{
-		TimestampExport: exportTimestamp,
-		MetricSortOrder: sortMetrics,
-		StringHandling:  stringAsLabels,
-	})
 }
 
 func NewJSONSerializer(timestampUnits time.Duration, timestampFormat string) (Serializer, error) {
@@ -193,14 +114,6 @@ func NewJSONSerializer(timestampUnits time.Duration, timestampFormat string) (Se
 
 func NewCarbon2Serializer(carbon2format string, carbon2SanitizeReplaceChar string) (Serializer, error) {
 	return carbon2.NewSerializer(carbon2format, carbon2SanitizeReplaceChar)
-}
-
-func NewSplunkmetricSerializer(splunkmetricHecRouting bool, splunkmetricMultimetric bool) (Serializer, error) {
-	return splunkmetric.NewSerializer(splunkmetricHecRouting, splunkmetricMultimetric)
-}
-
-func NewNowSerializer() (Serializer, error) {
-	return nowmetric.NewSerializer()
 }
 
 func NewInfluxSerializerConfig(config *Config) (Serializer, error) {
@@ -251,8 +164,4 @@ func NewGraphiteSerializer(prefix, template string, tagSupport bool, tagSanitize
 		Separator:       separator,
 		Templates:       graphiteTemplates,
 	}, nil
-}
-
-func NewMsgpackSerializer() (Serializer, error) {
-	return msgpack.NewSerializer(), nil
 }
