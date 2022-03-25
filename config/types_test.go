@@ -9,29 +9,7 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/inputs"
-	"github.com/influxdata/telegraf/plugins/processors/reverse_dns"
 )
-
-func TestConfigDuration(t *testing.T) {
-	c := config.NewConfig()
-	err := c.LoadConfigData([]byte(`
-[[processors.reverse_dns]]
-  cache_ttl = "3h"
-  lookup_timeout = "17s"
-  max_parallel_lookups = 13
-  ordered = true
-  [[processors.reverse_dns.lookup]]
-    field = "source_ip"
-    dest = "source_name"
-`))
-	require.NoError(t, err)
-	require.Len(t, c.Processors, 1)
-	p := c.Processors[0].Processor.(*reverse_dns.ReverseDNS)
-	require.EqualValues(t, 3*time.Hour, p.CacheTTL)
-	require.EqualValues(t, 17*time.Second, p.LookupTimeout)
-	require.Equal(t, 13, p.MaxParallelLookups)
-	require.True(t, p.Ordered)
-}
 
 func TestDuration(t *testing.T) {
 	var d config.Duration
