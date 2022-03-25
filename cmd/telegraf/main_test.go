@@ -153,50 +153,6 @@ func (m *MockServer) ErrChan() <-chan error {
 	return nil
 }
 
-func TestUsageFlag(t *testing.T) {
-	tests := []struct {
-		PluginName     string
-		ExpectedError  string
-		ExpectedOutput string
-	}{
-		{
-			PluginName:    "example",
-			ExpectedError: "input example not found and output example not found",
-		},
-		{
-			PluginName: "temp",
-			ExpectedOutput: `
-# Read metrics about temperature
-[[inputs.temp]]
-  ## Desired output format (Linux only)
-  ## Available values are
-  ##   v1 -- use pre-v1.22.4 sensor naming, e.g. coretemp_core0_input
-  ##   v2 -- use v1.22.4+ sensor naming, e.g. coretemp_core_0_input
-  # metric_format = "v2"
-
-  ## Add device tag to distinguish devices with the same name (Linux only)
-  # add_device_tag = false
-
-`,
-		},
-	}
-
-	for _, test := range tests {
-		buf := new(bytes.Buffer)
-		args := os.Args[0:1]
-		args = append(args, "--usage", test.PluginName)
-		err := runApp(args, buf, NewMockServer(), NewMockConfig(buf), NewMockTelegraf())
-		if test.ExpectedError != "" {
-			require.ErrorContains(t, err, test.ExpectedError)
-			continue
-		}
-		require.NoError(t, err)
-		// To run this test on windows and linux, remove windows carriage return
-		o := strings.Replace(buf.String(), "\r", "", -1)
-		require.Equal(t, test.ExpectedOutput, o)
-	}
-}
-
 func TestInputListFlag(t *testing.T) {
 	buf := new(bytes.Buffer)
 	args := os.Args[0:1]
