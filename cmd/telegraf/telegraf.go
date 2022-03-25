@@ -30,7 +30,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 	_ "github.com/influxdata/telegraf/plugins/inputs/all"
 	"github.com/influxdata/telegraf/plugins/outputs"
-	_ "github.com/influxdata/telegraf/plugins/outputs/all"
 	_ "github.com/influxdata/telegraf/plugins/parsers/all"
 	_ "github.com/influxdata/telegraf/plugins/processors/all"
 	"gopkg.in/tomb.v1"
@@ -51,36 +50,52 @@ func (i *sliceFlags) Set(value string) error {
 // If you update these, update usage.go and usage_windows.go
 var fDebug = flag.Bool("debug", false,
 	"turn on debug logging")
+
 var pprofAddr = flag.String("pprof-addr", "",
 	"pprof address to listen on, not activate pprof if empty")
+
 var fQuiet = flag.Bool("quiet", false,
 	"run in quiet mode")
-var fTest = flag.Bool("test", false, "enable test mode: gather metrics, print them out, and exit. Note: Test mode only runs inputs, not processors, aggregators, or outputs")
-var fTestWait = flag.Int("test-wait", 0, "wait up to this many seconds for service inputs to complete in test mode")
 
-var fConfigs sliceFlags
-var fConfigDirs sliceFlags
-var fWatchConfig = flag.String("watch-config", "", "Monitoring config changes [notify, poll]")
-var fVersion = flag.Bool("version", false, "display the version and exit")
-var fSampleConfig = flag.Bool("sample-config", false,
-	"print out full sample configuration")
-var fPidfile = flag.String("pidfile", "", "file to write our pid to")
-var fDeprecationList = flag.Bool("deprecation-list", false,
-	"print all deprecated plugins or plugin options.")
+var (
+	fTest     = flag.Bool("test", false, "enable test mode: gather metrics, print them out, and exit. Note: Test mode only runs inputs, not processors, aggregators, or outputs")
+	fTestWait = flag.Int("test-wait", 0, "wait up to this many seconds for service inputs to complete in test mode")
+)
+
+var (
+	fConfigs      sliceFlags
+	fConfigDirs   sliceFlags
+	fWatchConfig  = flag.String("watch-config", "", "Monitoring config changes [notify, poll]")
+	fVersion      = flag.Bool("version", false, "display the version and exit")
+	fSampleConfig = flag.Bool("sample-config", false,
+		"print out full sample configuration")
+)
+var (
+	fPidfile         = flag.String("pidfile", "", "file to write our pid to")
+	fDeprecationList = flag.Bool("deprecation-list", false,
+		"print all deprecated plugins or plugin options.")
+)
 var fSectionFilters = flag.String("section-filter", "",
 	"filter the sections to print, separator is ':'. Valid values are 'agent', 'global_tags', 'outputs', 'processors', 'aggregators' and 'inputs'")
+
 var fInputFilters = flag.String("input-filter", "",
 	"filter the inputs to enable, separator is :")
+
 var fInputList = flag.Bool("input-list", false,
 	"print available input plugins.")
+
 var fOutputFilters = flag.String("output-filter", "",
 	"filter the outputs to enable, separator is :")
+
 var fOutputList = flag.Bool("output-list", false,
 	"print available output plugins.")
+
 var fAggregatorFilters = flag.String("aggregator-filter", "",
 	"filter the aggregators to enable, separator is :")
+
 var fProcessorFilters = flag.String("processor-filter", "",
 	"filter the processors to enable, separator is :")
+
 var fUsage = flag.String("usage", "",
 	"print usage for a plugin, ie, 'telegraf --usage mysql'")
 
@@ -107,6 +122,7 @@ var fServiceRestartDelay = flag.String("service-restart-delay", "5m",
 //nolint:varcheck,unused // False positive - this var is used for non-default build tag: windows
 var fRunAsConsole = flag.Bool("console", false,
 	"run as console application (windows only)")
+
 var fPlugins = flag.String("plugin-directory", "",
 	"path to directory containing external plugins")
 var fRunOnce = flag.Bool("once", false, "run one gather and exit")
@@ -308,7 +324,7 @@ func runAgent(ctx context.Context,
 	}
 
 	if *fPidfile != "" {
-		f, err := os.OpenFile(*fPidfile, os.O_CREATE|os.O_WRONLY, 0644)
+		f, err := os.OpenFile(*fPidfile, os.O_CREATE|os.O_WRONLY, 0o644)
 		if err != nil {
 			log.Printf("E! Unable to create pidfile: %s", err)
 		} else {
@@ -334,7 +350,7 @@ func usageExit(rc int) {
 }
 
 func formatFullVersion() string {
-	var parts = []string{"Telegraf"}
+	parts := []string{"Telegraf"}
 
 	if version != "" {
 		parts = append(parts, version)

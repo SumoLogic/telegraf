@@ -14,7 +14,6 @@ import (
 	"github.com/influxdata/telegraf/plugins/serializers/prometheus"
 	"github.com/influxdata/telegraf/plugins/serializers/prometheusremotewrite"
 	"github.com/influxdata/telegraf/plugins/serializers/splunkmetric"
-	"github.com/influxdata/telegraf/plugins/serializers/wavefront"
 )
 
 // SerializerOutput is an interface for output plugins that are able to
@@ -136,8 +135,6 @@ func NewSerializer(config *Config) (Serializer, error) {
 		serializer, err = NewNowSerializer()
 	case "carbon2":
 		serializer, err = NewCarbon2Serializer(config.Carbon2Format, config.Carbon2SanitizeReplaceChar)
-	case "wavefront":
-		serializer, err = NewWavefrontSerializer(config.Prefix, config.WavefrontUseStrict, config.WavefrontSourceOverride, config.WavefrontDisablePrefixConversion)
 	case "prometheus":
 		serializer, err = NewPrometheusSerializer(config)
 	case "prometheusremotewrite":
@@ -190,10 +187,6 @@ func NewPrometheusSerializer(config *Config) (Serializer, error) {
 	})
 }
 
-func NewWavefrontSerializer(prefix string, useStrict bool, sourceOverride []string, disablePrefixConversions bool) (Serializer, error) {
-	return wavefront.NewSerializer(prefix, useStrict, sourceOverride, disablePrefixConversions)
-}
-
 func NewJSONSerializer(timestampUnits time.Duration, timestampFormat string) (Serializer, error) {
 	return json.NewSerializer(timestampUnits, timestampFormat)
 }
@@ -234,7 +227,6 @@ func NewInfluxSerializer() (Serializer, error) {
 
 func NewGraphiteSerializer(prefix, template string, tagSupport bool, tagSanitizeMode string, separator string, templates []string) (Serializer, error) {
 	graphiteTemplates, defaultTemplate, err := graphite.InitGraphiteTemplates(templates)
-
 	if err != nil {
 		return nil, err
 	}
