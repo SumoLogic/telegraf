@@ -347,17 +347,6 @@ func TestCommandConfig(t *testing.T) {
 			},
 		},
 		{
-			name:     "filter output plugins",
-			commands: []string{"config", "--output-filter", "influxdb:http"},
-			expectedPlugins: []string{
-				"[[outputs.influxdb]]",
-				"[[outputs.http]]",
-			},
-			removedPlugins: []string{
-				"[[outputs.file]]",
-			},
-		},
-		{
 			name:     "filter processor plugins",
 			commands: []string{"config", "--processor-filter", "date:enum"},
 			expectedPlugins: []string{

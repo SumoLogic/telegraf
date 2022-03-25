@@ -464,6 +464,7 @@ func TestConfig_WrongFieldType(t *testing.T) {
 }
 
 func TestConfig_InlineTables(t *testing.T) {
+	t.Skip("We don't have output plugins")
 	// #4098
 	t.Setenv("TOKEN", "test")
 
@@ -490,6 +491,7 @@ func TestConfig_SliceComment(t *testing.T) {
 }
 
 func TestConfig_BadOrdering(t *testing.T) {
+	t.Skip("We don't have output plugins")
 	// #3444: when not using inline tables, care has to be taken so subsequent configuration
 	// doesn't become part of the table. This is not a bug, but TOML syntax.
 	c := config.NewConfig()
@@ -504,6 +506,7 @@ func TestConfig_BadOrdering(t *testing.T) {
 
 func TestConfig_AzureMonitorNamespacePrefix(t *testing.T) {
 	// #8256 Cannot use empty string as the namespace prefix
+	t.Skip("We don't have output plugins")
 	c := config.NewConfig()
 	require.NoError(t, c.LoadConfig("./testdata/azure_monitor.toml"))
 	require.Len(t, c.Outputs, 2)
@@ -621,7 +624,6 @@ func TestConfig_SerializerInterfaceNewFormat(t *testing.T) {
 		"prometheus",
 		"prometheusremotewrite",
 		"splunkmetric",
-		"wavefront",
 	}
 
 	c := config.NewConfig()
@@ -713,7 +715,6 @@ func TestConfig_SerializerInterfaceOldFormat(t *testing.T) {
 		"prometheus",
 		"prometheusremotewrite",
 		"splunkmetric",
-		"wavefront",
 	}
 
 	c := config.NewConfig()

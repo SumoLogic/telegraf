@@ -129,16 +129,6 @@ type Config struct {
 	// Omit the Splunk Event "metric" tag
 	SplunkmetricOmitEventTag bool `toml:"splunkmetric_omit_event_tag"`
 
-	// Point tags to use as the source name for Wavefront (if none found, host will be used).
-	WavefrontSourceOverride []string `toml:"wavefront_source_override"`
-
-	// Use Strict rules to sanitize metric and tag names from invalid characters for Wavefront
-	// When enabled forward slash (/) and comma (,) will be accepted
-	WavefrontUseStrict bool `toml:"wavefront_use_strict"`
-
-	// Convert "_" in prefixes to "." for Wavefront
-	WavefrontDisablePrefixConversion bool `toml:"wavefront_disable_prefix_conversion"`
-
 	// Include the metric timestamp on each sample.
 	PrometheusExportTimestamp bool `toml:"prometheus_export_timestamp"`
 

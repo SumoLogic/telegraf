@@ -27,6 +27,3 @@
 
 [[outputs.serializer_test_new]]
   data_format = "splunkmetric"
-
-[[outputs.serializer_test_new]]
-  data_format = "wavefront"
