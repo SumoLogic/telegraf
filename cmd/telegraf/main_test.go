@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -151,43 +150,6 @@ func (m *MockServer) Start(_ string) {
 
 func (m *MockServer) ErrChan() <-chan error {
 	return nil
-}
-
-func TestUsageFlag(t *testing.T) {
-	tests := []struct {
-		PluginName     string
-		ExpectedError  string
-		ExpectedOutput string
-	}{
-		{
-			PluginName:    "example",
-			ExpectedError: "input example not found and output example not found",
-		},
-		{
-			PluginName: "temp",
-			ExpectedOutput: `
-# Read metrics about temperature
-[[inputs.temp]]
-  # no configuration
-
-`,
-		},
-	}
-
-	for _, test := range tests {
-		buf := new(bytes.Buffer)
-		args := os.Args[0:1]
-		args = append(args, "--usage", test.PluginName)
-		err := runApp(args, buf, NewMockServer(), NewMockConfig(buf), NewMockTelegraf())
-		if test.ExpectedError != "" {
-			require.ErrorContains(t, err, test.ExpectedError)
-			continue
-		}
-		require.NoError(t, err)
-		// To run this test on windows and linux, remove windows carriage return
-		o := strings.Replace(buf.String(), "\r", "", -1)
-		require.Equal(t, test.ExpectedOutput, o)
-	}
 }
 
 func TestInputListFlag(t *testing.T) {
