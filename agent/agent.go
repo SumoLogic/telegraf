@@ -207,6 +207,43 @@ func (a *Agent) Run(ctx context.Context) error {
 	return err
 }
 
+// RunWithChannel starts inputs and passes all gathered metrics into the passed
+// channel.
+func (a *Agent) RunWithChannel(ctx context.Context, out chan<- telegraf.Metric) error {
+	log.Printf("I! [agent] Config: Interval:%v, Quiet:%#v, Hostname:%#v, "+
+		"Flush Interval:%v",
+		a.Config.Agent.Interval,
+		a.Config.Agent.Quiet,
+		a.Config.Agent.Hostname,
+		a.Config.Agent.FlushInterval,
+	)
+
+	log.Printf("D! [agent] Initializing plugins")
+	err := a.initPlugins()
+	if err != nil {
+		return err
+	}
+
+	startTime := time.Now()
+
+	iu, err := a.startInputs(out, a.Config.Inputs)
+	if err != nil {
+		return err
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		a.runInputs(ctx, startTime, iu)
+	}()
+
+	wg.Wait()
+
+	log.Printf("D! [agent] Stopped Successfully")
+	return err
+}
+
 // initPlugins runs the Init function on plugins.
 func (a *Agent) initPlugins() error {
 	for _, input := range a.Config.Inputs {
