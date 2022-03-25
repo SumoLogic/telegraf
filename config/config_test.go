@@ -619,11 +619,8 @@ func TestConfig_SerializerInterfaceNewFormat(t *testing.T) {
 		"graphite",
 		"influx",
 		"json",
-		"msgpack",
-		"nowmetric",
 		"prometheus",
 		"prometheusremotewrite",
-		"splunkmetric",
 	}
 
 	c := config.NewConfig()
@@ -710,11 +707,8 @@ func TestConfig_SerializerInterfaceOldFormat(t *testing.T) {
 		"graphite",
 		"influx",
 		"json",
-		"msgpack",
-		"nowmetric",
 		"prometheus",
 		"prometheusremotewrite",
-		"splunkmetric",
 	}
 
 	c := config.NewConfig()

@@ -14,16 +14,7 @@
   data_format = "json"
 
 [[outputs.serializer_test_old]]
-  data_format = "msgpack"
-
-[[outputs.serializer_test_old]]
-  data_format = "nowmetric"
-
-[[outputs.serializer_test_old]]
   data_format = "prometheus"
 
 [[outputs.serializer_test_old]]
   data_format = "prometheusremotewrite"
-
-[[outputs.serializer_test_old]]
-  data_format = "splunkmetric"
