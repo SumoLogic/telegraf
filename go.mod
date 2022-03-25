@@ -34,13 +34,10 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.18.0
 	github.com/aws/aws-sdk-go-v2/config v1.18.8
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.20
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.3
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.25.9
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.17.3
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.80.1
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.17.8
 	github.com/aws/aws-sdk-go-v2/service/sts v1.19.0
-	github.com/aws/smithy-go v1.14.2
 	github.com/benbjohnson/clock v1.3.3
 	github.com/blues/jsonata-go v1.5.4
 	github.com/bmatcuk/doublestar/v3 v3.0.0
@@ -48,7 +45,6 @@ require (
 	github.com/caio/go-tdigest v3.1.0+incompatible
 	github.com/cisco-ie/nx-telemetry-proto v0.0.0-20230117155933-f64c045c77df
 	github.com/compose-spec/compose-go v1.13.4
-	github.com/coocood/freecache v1.2.3
 	github.com/coreos/go-semver v0.3.1
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f
 	github.com/couchbase/go-couchbase v0.1.1
@@ -69,7 +65,6 @@ require (
 	github.com/gobwas/glob v0.2.3
 	github.com/gofrs/uuid/v5 v5.0.0
 	github.com/golang-jwt/jwt/v5 v5.0.0
-	github.com/golang/geo v0.0.0-20190916061304-5b978397cfec
 	github.com/golang/snappy v0.0.4
 	github.com/google/cel-go v0.14.1-0.20230424164844-d39523c445fc
 	github.com/google/gnxi v0.0.0-20221016143401-2aeceb5a2901
@@ -171,7 +166,6 @@ require (
 	golang.org/x/term v0.12.0
 	golang.org/x/text v0.13.0
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20211230205640-daad0b7ba671
-	gonum.org/v1/gonum v0.13.0
 	google.golang.org/api v0.134.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20230717213848-3f92550aa753
 	google.golang.org/grpc v1.57.0
@@ -208,6 +202,8 @@ require (
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.1.0 // indirect
 	github.com/Masterminds/semver/v3 v3.2.0 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.2 // indirect
+	github.com/aws/smithy-go v1.14.2 // indirect
 	github.com/fxamacker/cbor v1.5.1 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
@@ -218,6 +214,7 @@ require (
 	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
 	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
+	gonum.org/v1/gonum v0.13.0 // indirect
 	google.golang.org/genproto v0.0.0-20230717213848-3f92550aa753 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230720185612-659f7aaaa771 // indirect
 )

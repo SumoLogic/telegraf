@@ -340,17 +340,6 @@ func TestCommandConfig(t *testing.T) {
 			},
 		},
 		{
-			name:     "filter processor plugins",
-			commands: []string{"config", "--processor-filter", "date:enum"},
-			expectedPlugins: []string{
-				"[[processors.date]]",
-				"[[processors.enum]]",
-			},
-			removedPlugins: []string{
-				"[[processors.parser]]",
-			},
-		},
-		{
 			name:     "filter aggregator plugins",
 			commands: []string{"config", "--aggregator-filter", "basicstats:starlark"},
 			expectedPlugins: []string{
