@@ -31,7 +31,6 @@ import (
 	_ "github.com/influxdata/telegraf/plugins/inputs/all"
 	"github.com/influxdata/telegraf/plugins/outputs"
 	_ "github.com/influxdata/telegraf/plugins/parsers/all"
-	_ "github.com/influxdata/telegraf/plugins/processors/all"
 	"gopkg.in/tomb.v1"
 )
 
@@ -70,11 +69,13 @@ var (
 	fSampleConfig = flag.Bool("sample-config", false,
 		"print out full sample configuration")
 )
+
 var (
 	fPidfile         = flag.String("pidfile", "", "file to write our pid to")
 	fDeprecationList = flag.Bool("deprecation-list", false,
 		"print all deprecated plugins or plugin options.")
 )
+
 var fSectionFilters = flag.String("section-filter", "",
 	"filter the sections to print, separator is ':'. Valid values are 'agent', 'global_tags', 'outputs', 'processors', 'aggregators' and 'inputs'")
 
