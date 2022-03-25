@@ -10,11 +10,8 @@ import (
 	"github.com/influxdata/telegraf/plugins/serializers/graphite"
 	"github.com/influxdata/telegraf/plugins/serializers/influx"
 	"github.com/influxdata/telegraf/plugins/serializers/json"
-	"github.com/influxdata/telegraf/plugins/serializers/msgpack"
-	"github.com/influxdata/telegraf/plugins/serializers/nowmetric"
 	"github.com/influxdata/telegraf/plugins/serializers/prometheus"
 	"github.com/influxdata/telegraf/plugins/serializers/prometheusremotewrite"
-	"github.com/influxdata/telegraf/plugins/serializers/splunkmetric"
 )
 
 // SerializerOutput is an interface for output plugins that are able to
@@ -150,18 +147,12 @@ func NewSerializer(config *Config) (Serializer, error) {
 		serializer, err = NewGraphiteSerializer(config.Prefix, config.Template, config.GraphiteTagSupport, config.GraphiteTagSanitizeMode, config.GraphiteSeparator, config.Templates)
 	case "json":
 		serializer, err = NewJSONSerializer(config.TimestampUnits, config.TimestampFormat, config.Transformation)
-	case "splunkmetric":
-		serializer, err = NewSplunkmetricSerializer(config.HecRouting, config.SplunkmetricMultiMetric, config.SplunkmetricOmitEventTag)
-	case "nowmetric":
-		serializer, err = NewNowSerializer()
 	case "carbon2":
 		serializer, err = NewCarbon2Serializer(config.Carbon2Format, config.Carbon2SanitizeReplaceChar)
 	case "prometheus":
 		serializer, err = NewPrometheusSerializer(config)
 	case "prometheusremotewrite":
 		serializer, err = NewPrometheusRemoteWriteSerializer(config)
-	case "msgpack":
-		serializer, err = NewMsgpackSerializer()
 	default:
 		err = fmt.Errorf("invalid data format: %s", config.DataFormat)
 	}
@@ -221,14 +212,6 @@ func NewCarbon2Serializer(carbon2format string, carbon2SanitizeReplaceChar strin
 	return carbon2.NewSerializer(carbon2format, carbon2SanitizeReplaceChar)
 }
 
-func NewSplunkmetricSerializer(splunkmetricHecRouting bool, splunkmetricMultimetric bool, splunkmetricOmitEventTag bool) (Serializer, error) {
-	return splunkmetric.NewSerializer(splunkmetricHecRouting, splunkmetricMultimetric, splunkmetricOmitEventTag)
-}
-
-func NewNowSerializer() (Serializer, error) {
-	return nowmetric.NewSerializer()
-}
-
 func NewInfluxSerializerConfig(config *Config) (Serializer, error) {
 	var sort influx.FieldSortOrder
 	if config.InfluxSortFields {
@@ -277,8 +260,4 @@ func NewGraphiteSerializer(prefix, template string, tagSupport bool, tagSanitize
 		Separator:       separator,
 		Templates:       graphiteTemplates,
 	}, nil
-}
-
-func NewMsgpackSerializer() (Serializer, error) {
-	return msgpack.NewSerializer(), nil
 }
