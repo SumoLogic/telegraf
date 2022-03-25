@@ -32,13 +32,10 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.20.1
 	github.com/aws/aws-sdk-go-v2/config v1.18.27
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.32
-	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.8
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.26.2
 	github.com/aws/aws-sdk-go-v2/service/dynamodb v1.20.0
-	github.com/aws/aws-sdk-go-v2/service/ec2 v1.80.1
 	github.com/aws/aws-sdk-go-v2/service/kinesis v1.18.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.21.2
-	github.com/aws/smithy-go v1.14.1
 	github.com/benbjohnson/clock v1.3.3
 	github.com/blues/jsonata-go v1.5.4
 	github.com/bmatcuk/doublestar/v3 v3.0.0
@@ -46,7 +43,6 @@ require (
 	github.com/caio/go-tdigest v3.1.0+incompatible
 	github.com/cisco-ie/nx-telemetry-proto v0.0.0-20230117155933-f64c045c77df
 	github.com/compose-spec/compose-go v1.16.0
-	github.com/coocood/freecache v1.2.3
 	github.com/coreos/go-semver v0.3.1
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f
 	github.com/couchbase/go-couchbase v0.1.1
@@ -67,7 +63,6 @@ require (
 	github.com/gobwas/glob v0.2.3
 	github.com/gofrs/uuid/v5 v5.0.0
 	github.com/golang-jwt/jwt/v4 v4.5.0
-	github.com/golang/geo v0.0.0-20190916061304-5b978397cfec
 	github.com/golang/snappy v0.0.4
 	github.com/google/cel-go v0.14.1-0.20230424164844-d39523c445fc
 	github.com/google/gnxi v0.0.0-20221016143401-2aeceb5a2901
@@ -166,7 +161,6 @@ require (
 	golang.org/x/term v0.11.0
 	golang.org/x/text v0.12.0
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20211230205640-daad0b7ba671
-	gonum.org/v1/gonum v0.13.0
 	google.golang.org/api v0.134.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20230706204954-ccb25ca9f130
 	google.golang.org/grpc v1.57.0
@@ -185,12 +179,17 @@ require (
 require (
 	github.com/Azure/go-autorest/autorest v0.11.28 // indirect
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.12 // indirect
+	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.8 // indirect
+	github.com/aws/smithy-go v1.14.1 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/jackc/pgconn v1.14.0 // indirect
 	github.com/jackc/pgio v1.0.0 // indirect
 	github.com/jackc/pgtype v1.14.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	gonum.org/v1/gonum v0.13.0 // indirect
+	google.golang.org/genproto v0.0.0-20230706204954-ccb25ca9f130 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20230720185612-659f7aaaa771 // indirect
 )
 
 require (
@@ -404,8 +403,6 @@ require (
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	golang.zx2c4.com/wireguard v0.0.0-20211209221555-9c9e7e272434 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/genproto v0.0.0-20230706204954-ccb25ca9f130 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20230720185612-659f7aaaa771 // indirect
 	gopkg.in/errgo.v1 v1.0.1 // indirect
 	gopkg.in/fatih/pool.v2 v2.0.0 // indirect
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
