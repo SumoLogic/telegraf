@@ -73,6 +73,7 @@ import (
 
 	_ "github.com/influxdata/telegraf/plugins/inputs/snmp"
 	_ "github.com/influxdata/telegraf/plugins/inputs/snmp_trap"
+	_ "github.com/influxdata/telegraf/plugins/inputs/socket_listener"
 	_ "github.com/influxdata/telegraf/plugins/inputs/sqlserver"
 	_ "github.com/influxdata/telegraf/plugins/inputs/system"
 	_ "github.com/influxdata/telegraf/plugins/inputs/varnish"
