@@ -729,7 +729,6 @@ func (p *Parser) checkResult(result gjson.Result, path string) error {
 	if !result.Exists() {
 		p.Log.Debugf("the path %q doesn't exist", path)
 		return fmt.Errorf("the path %q doesn't exist", path)
-	}
 
 	return nil
 }
