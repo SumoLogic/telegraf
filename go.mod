@@ -25,7 +25,7 @@ require (
 	github.com/blues/jsonata-go v1.5.4
 	github.com/bmatcuk/doublestar/v3 v3.0.0
 	github.com/caio/go-tdigest v3.1.0+incompatible
-	github.com/compose-spec/compose-go v1.13.4
+	github.com/compose-spec/compose-go v1.20.0
 	github.com/coreos/go-semver v0.3.1
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f
 	github.com/couchbase/go-couchbase v0.1.1
@@ -36,8 +36,8 @@ require (
 	github.com/eclipse/paho.mqtt.golang v1.4.3
 	github.com/fatih/color v1.15.0
 	github.com/go-logfmt/logfmt v0.6.0
-	github.com/go-redis/redis v6.15.9+incompatible
-	github.com/go-sql-driver/mysql v1.6.0
+	github.com/go-redis/redis/v8 v8.11.5
+	github.com/go-sql-driver/mysql v1.7.1
 	github.com/gobwas/glob v0.2.3
 	github.com/gofrs/uuid/v5 v5.0.0
 	github.com/golang-jwt/jwt/v5 v5.0.0
@@ -47,13 +47,13 @@ require (
 	github.com/google/licensecheck v0.3.1
 	github.com/google/uuid v1.3.1
 	github.com/gopcua/opcua v0.4.0
-	github.com/gosnmp/gosnmp v1.35.0
+	github.com/gosnmp/gosnmp v1.36.1
 	github.com/hashicorp/consul/api v1.22.0
 	github.com/influxdata/line-protocol/v2 v2.2.1
 	github.com/influxdata/tail v1.0.1-0.20210707231403-b283181d1fa7
 	github.com/influxdata/toml v0.0.0-20190415235208-270119a8ce65
 	github.com/influxdata/wlog v0.0.0-20160411224016-7c63b0a71ef8
-	github.com/jackc/pgx/v4 v4.17.1
+	github.com/jackc/pgx/v4 v4.12.1-0.20210724153913-640aa07df17c
 	github.com/jeremywohl/flatten/v2 v2.0.0-20211013061545-07e4a09fb8e4
 	github.com/jhump/protoreflect v1.15.3
 	github.com/kardianos/service v1.2.2
@@ -67,7 +67,7 @@ require (
 	github.com/microsoft/go-mssqldb v1.5.0
 	github.com/miekg/dns v1.1.56
 	github.com/nwaples/tacplus v0.0.3
-	github.com/prometheus-community/pro-bing v0.1.0
+	github.com/prometheus-community/pro-bing v0.3.0
 	github.com/prometheus/client_model v0.4.0
 	github.com/prometheus/common v0.44.0
 	github.com/prometheus/prometheus v0.46.0
@@ -110,6 +110,8 @@ require (
 	github.com/Masterminds/semver/v3 v3.2.0 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.13.11 // indirect
 	github.com/aws/smithy-go v1.14.2 // indirect
+	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/fxamacker/cbor v1.5.1 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
@@ -120,7 +122,6 @@ require (
 	github.com/jackc/pgtype v1.14.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
-	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.27.6 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/sync v0.4.0 // indirect
