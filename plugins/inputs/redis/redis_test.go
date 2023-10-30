@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/docker/go-connections/nat"
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go/wait"
 
