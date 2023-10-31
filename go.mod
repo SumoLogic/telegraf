@@ -33,6 +33,7 @@ require (
 	github.com/coreos/go-semver v0.3.1
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/couchbase/go-couchbase v0.1.1
+	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dimchansky/utfbom v1.1.1
 	github.com/docker/docker v25.0.5+incompatible
 	github.com/docker/go-connections v0.5.0
@@ -41,7 +42,7 @@ require (
 	github.com/fatih/color v1.17.0
 	github.com/go-ldap/ldap/v3 v3.4.8
 	github.com/go-logfmt/logfmt v0.6.0
-	github.com/go-redis/redis v6.15.9+incompatible
+	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/gobwas/glob v0.2.3
 	github.com/gofrs/uuid/v5 v5.0.0
@@ -69,7 +70,6 @@ require (
 	github.com/linkedin/goavro/v2 v2.13.0
 	github.com/lxc/incus/v6 v6.2.0
 	github.com/mdlayher/vsock v1.2.1
-	github.com/microsoft/go-mssqldb v1.7.2
 	github.com/miekg/dns v1.1.59
 	github.com/nwaples/tacplus v0.0.3
 	github.com/openconfig/goyang v1.5.0
@@ -163,6 +163,7 @@ require (
 	github.com/danieljoos/wincred v1.2.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dennwc/varint v1.0.0 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/distribution/reference v0.5.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dvsekhvalnov/jose2go v1.6.0 // indirect
@@ -245,7 +246,6 @@ require (
 	github.com/muhlemmer/gu v0.3.1 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/naoina/go-stringutil v0.1.0 // indirect
-	github.com/onsi/ginkgo v1.16.5 // indirect
 	github.com/onsi/gomega v1.31.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
