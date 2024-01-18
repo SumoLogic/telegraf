@@ -32,7 +32,6 @@ require (
 	github.com/coreos/go-semver v0.3.1
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/couchbase/go-couchbase v0.1.1
-	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dimchansky/utfbom v1.1.1
 	github.com/docker/docker v25.0.5+incompatible
 	github.com/docker/go-connections v0.5.0
@@ -68,6 +67,7 @@ require (
 	github.com/linkedin/goavro/v2 v2.13.0
 	github.com/lxc/incus/v6 v6.2.0
 	github.com/mdlayher/vsock v1.2.1
+	github.com/microsoft/go-mssqldb v1.7.2
 	github.com/miekg/dns v1.1.59
 	github.com/nwaples/tacplus v0.0.3
 	github.com/openconfig/goyang v1.5.0
