@@ -29,7 +29,6 @@ require (
 	github.com/coreos/go-semver v0.3.1
 	github.com/coreos/go-systemd v0.0.0-20190719114852-fd7a80b32e1f
 	github.com/couchbase/go-couchbase v0.1.1
-	github.com/denisenkom/go-mssqldb v0.12.3
 	github.com/dimchansky/utfbom v1.1.1
 	github.com/docker/docker v24.0.6+incompatible
 	github.com/docker/go-connections v0.4.0
@@ -65,6 +64,7 @@ require (
 	github.com/linkedin/goavro/v2 v2.12.0
 	github.com/lxc/lxd v0.0.0-20220920163450-e9b4b514106a
 	github.com/matttproud/golang_protobuf_extensions v1.0.4
+	github.com/microsoft/go-mssqldb v1.5.0
 	github.com/miekg/dns v1.1.56
 	github.com/nwaples/tacplus v0.0.3
 	github.com/prometheus-community/pro-bing v0.3.0
