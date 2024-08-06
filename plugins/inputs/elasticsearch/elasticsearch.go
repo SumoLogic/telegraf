@@ -1,9 +1,13 @@
+//go:generate ../../../tools/readme_config_includer/generator
 package elasticsearch
 
 import (
+	"context"
+	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"regexp"
 	"sort"
@@ -12,11 +16,15 @@ import (
 	"time"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/internal"
-	"github.com/influxdata/telegraf/plugins/common/tls"
+	"github.com/influxdata/telegraf/config"
+	"github.com/influxdata/telegraf/filter"
+	httpconfig "github.com/influxdata/telegraf/plugins/common/http"
 	"github.com/influxdata/telegraf/plugins/inputs"
 	jsonparser "github.com/influxdata/telegraf/plugins/parsers/json"
 )
+
+//go:embed sample.conf
+var sampleConfig string
 
 // mask for masking username/password from error messages
 var mask = regexp.MustCompile(`https?:\/\/\S+:\S+@`)
@@ -85,78 +93,31 @@ type indexStat struct {
 	Shards    map[string][]interface{} `json:"shards"`
 }
 
-const sampleConfig = `
-  ## specify a list of one or more Elasticsearch servers
-  # you can add username and password to your url to use basic authentication:
-  # servers = ["http://user:pass@localhost:9200"]
-  servers = ["http://localhost:9200"]
-
-  ## Timeout for HTTP requests to the elastic search server(s)
-  http_timeout = "5s"
-
-  ## When local is true (the default), the node will read only its own stats.
-  ## Set local to false when you want to read the node stats from all nodes
-  ## of the cluster.
-  local = true
-
-  ## Set cluster_health to true when you want to also obtain cluster health stats
-  cluster_health = false
-
-  ## Adjust cluster_health_level when you want to also obtain detailed health stats
-  ## The options are
-  ##  - indices (default)
-  ##  - cluster
-  # cluster_health_level = "indices"
-
-  ## Set cluster_stats to true when you want to also obtain cluster stats.
-  cluster_stats = false
-
-  ## Only gather cluster_stats from the master node. To work this require local = true
-  cluster_stats_only_from_master = true
-
-  ## Indices to collect; can be one or more indices names or _all
-  indices_include = ["_all"]
-
-  ## One of "shards", "cluster", "indices"
-  indices_level = "shards"
-
-  ## node_stats is a list of sub-stats that you want to have gathered. Valid options
-  ## are "indices", "os", "process", "jvm", "thread_pool", "fs", "transport", "http",
-  ## "breaker". Per default, all stats are gathered.
-  # node_stats = ["jvm", "http"]
-
-  ## HTTP Basic Authentication username and password.
-  # username = ""
-  # password = ""
-
-  ## Optional TLS Config
-  # tls_ca = "/etc/telegraf/ca.pem"
-  # tls_cert = "/etc/telegraf/cert.pem"
-  # tls_key = "/etc/telegraf/key.pem"
-  ## Use TLS but skip chain & host verification
-  # insecure_skip_verify = false
-`
-
 // Elasticsearch is a plugin to read stats from one or many Elasticsearch
 // servers.
 type Elasticsearch struct {
-	Local                      bool              `toml:"local"`
-	Servers                    []string          `toml:"servers"`
-	HTTPTimeout                internal.Duration `toml:"http_timeout"`
-	ClusterHealth              bool              `toml:"cluster_health"`
-	ClusterHealthLevel         string            `toml:"cluster_health_level"`
-	ClusterStats               bool              `toml:"cluster_stats"`
-	ClusterStatsOnlyFromMaster bool              `toml:"cluster_stats_only_from_master"`
-	IndicesInclude             []string          `toml:"indices_include"`
-	IndicesLevel               string            `toml:"indices_level"`
-	NodeStats                  []string          `toml:"node_stats"`
-	Username                   string            `toml:"username"`
-	Password                   string            `toml:"password"`
-	tls.ClientConfig
+	Local                      bool            `toml:"local"`
+	Servers                    []string        `toml:"servers"`
+	HTTPTimeout                config.Duration `toml:"http_timeout" deprecated:"1.29.0;1.35.0;use 'timeout' instead"`
+	ClusterHealth              bool            `toml:"cluster_health"`
+	ClusterHealthLevel         string          `toml:"cluster_health_level"`
+	ClusterStats               bool            `toml:"cluster_stats"`
+	ClusterStatsOnlyFromMaster bool            `toml:"cluster_stats_only_from_master"`
+	IndicesInclude             []string        `toml:"indices_include"`
+	IndicesLevel               string          `toml:"indices_level"`
+	NodeStats                  []string        `toml:"node_stats"`
+	Username                   string          `toml:"username"`
+	Password                   string          `toml:"password"`
+	NumMostRecentIndices       int             `toml:"num_most_recent_indices"`
 
-	client          *http.Client
+	Log telegraf.Logger `toml:"-"`
+
+	client *http.Client
+	httpconfig.HTTPClientConfig
+
 	serverInfo      map[string]serverInfo
 	serverInfoMutex sync.Mutex
+	indexMatchers   map[string]filter.Filter
 }
 type serverInfo struct {
 	nodeID   string
@@ -170,9 +131,12 @@ func (i serverInfo) isMaster() bool {
 // NewElasticsearch return a new instance of Elasticsearch
 func NewElasticsearch() *Elasticsearch {
 	return &Elasticsearch{
-		HTTPTimeout:                internal.Duration{Duration: time.Second * 5},
 		ClusterStatsOnlyFromMaster: true,
 		ClusterHealthLevel:         "indices",
+		HTTPClientConfig: httpconfig.HTTPClientConfig{
+			ResponseHeaderTimeout: config.Duration(5 * time.Second),
+			Timeout:               config.Duration(5 * time.Second),
+		},
 	}
 }
 
@@ -204,14 +168,25 @@ func mapShardStatusToCode(s string) int {
 	return 0
 }
 
-// SampleConfig returns sample configuration for this plugin.
-func (e *Elasticsearch) SampleConfig() string {
+func (*Elasticsearch) SampleConfig() string {
 	return sampleConfig
 }
 
-// Description returns the plugin description.
-func (e *Elasticsearch) Description() string {
-	return "Read stats from one or more Elasticsearch servers or clusters"
+// Init the plugin.
+func (e *Elasticsearch) Init() error {
+	// Compile the configured indexes to match for sorting.
+	indexMatchers, err := e.compileIndexMatchers()
+	if err != nil {
+		return err
+	}
+
+	e.indexMatchers = indexMatchers
+
+	return nil
+}
+
+func (e *Elasticsearch) Start(_ telegraf.Accumulator) error {
+	return nil
 }
 
 // Gather reads the stats from Elasticsearch and writes it to the
@@ -240,21 +215,20 @@ func (e *Elasticsearch) Gather(acc telegraf.Accumulator) error {
 
 				// Gather node ID
 				if info.nodeID, err = e.gatherNodeID(s + "/_nodes/_local/name"); err != nil {
-					acc.AddError(fmt.Errorf(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
+					acc.AddError(errors.New(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
 					return
 				}
 
 				// get cat/master information here so NodeStats can determine
 				// whether this node is the Master
 				if info.masterID, err = e.getCatMaster(s + "/_cat/master"); err != nil {
-					acc.AddError(fmt.Errorf(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
+					acc.AddError(errors.New(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
 					return
 				}
 
 				e.serverInfoMutex.Lock()
 				e.serverInfo[s] = info
 				e.serverInfoMutex.Unlock()
-
 			}(serv, acc)
 		}
 		wgC.Wait()
@@ -270,7 +244,7 @@ func (e *Elasticsearch) Gather(acc telegraf.Accumulator) error {
 
 			// Always gather node stats
 			if err := e.gatherNodeStats(url, acc); err != nil {
-				acc.AddError(fmt.Errorf(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
+				acc.AddError(errors.New(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
 				return
 			}
 
@@ -280,14 +254,14 @@ func (e *Elasticsearch) Gather(acc telegraf.Accumulator) error {
 					url = url + "?level=" + e.ClusterHealthLevel
 				}
 				if err := e.gatherClusterHealth(url, acc); err != nil {
-					acc.AddError(fmt.Errorf(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
+					acc.AddError(errors.New(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
 					return
 				}
 			}
 
 			if e.ClusterStats && (e.serverInfo[s].isMaster() || !e.ClusterStatsOnlyFromMaster || !e.Local) {
 				if err := e.gatherClusterStats(s+"/_cluster/stats", acc); err != nil {
-					acc.AddError(fmt.Errorf(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
+					acc.AddError(errors.New(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
 					return
 				}
 			}
@@ -295,12 +269,12 @@ func (e *Elasticsearch) Gather(acc telegraf.Accumulator) error {
 			if len(e.IndicesInclude) > 0 && (e.serverInfo[s].isMaster() || !e.ClusterStatsOnlyFromMaster || !e.Local) {
 				if e.IndicesLevel != "shards" {
 					if err := e.gatherIndicesStats(s+"/"+strings.Join(e.IndicesInclude, ",")+"/_stats", acc); err != nil {
-						acc.AddError(fmt.Errorf(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
+						acc.AddError(errors.New(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
 						return
 					}
 				} else {
 					if err := e.gatherIndicesStats(s+"/"+strings.Join(e.IndicesInclude, ",")+"/_stats?level=shards", acc); err != nil {
-						acc.AddError(fmt.Errorf(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
+						acc.AddError(errors.New(mask.ReplaceAllString(err.Error(), "http(s)://XXX:XXX@")))
 						return
 					}
 				}
@@ -312,21 +286,19 @@ func (e *Elasticsearch) Gather(acc telegraf.Accumulator) error {
 	return nil
 }
 
-func (e *Elasticsearch) createHTTPClient() (*http.Client, error) {
-	tlsCfg, err := e.ClientConfig.TLSConfig()
-	if err != nil {
-		return nil, err
+func (e *Elasticsearch) Stop() {
+	if e.client != nil {
+		e.client.CloseIdleConnections()
 	}
-	tr := &http.Transport{
-		ResponseHeaderTimeout: e.HTTPTimeout.Duration,
-		TLSClientConfig:       tlsCfg,
-	}
-	client := &http.Client{
-		Transport: tr,
-		Timeout:   e.HTTPTimeout.Duration,
-	}
+}
 
-	return client, nil
+func (e *Elasticsearch) createHTTPClient() (*http.Client, error) {
+	ctx := context.Background()
+	if e.HTTPTimeout != 0 {
+		e.HTTPClientConfig.Timeout = e.HTTPTimeout
+		e.HTTPClientConfig.ResponseHeaderTimeout = e.HTTPTimeout
+	}
+	return e.HTTPClientConfig.CreateClient(ctx, e.Log)
 }
 
 func (e *Elasticsearch) nodeStatsURL(baseURL string) string {
@@ -527,66 +499,131 @@ func (e *Elasticsearch) gatherIndicesStats(url string, acc telegraf.Accumulator)
 		acc.AddFields("elasticsearch_indices_stats_"+m, jsonParser.Fields, map[string]string{"index_name": "_all"}, now)
 	}
 
-	// Individual Indices stats
-	for id, index := range indicesStats.Indices {
-		indexTag := map[string]string{"index_name": id}
-		stats := map[string]interface{}{
-			"primaries": index.Primaries,
-			"total":     index.Total,
+	// Gather stats for each index.
+	err := e.gatherIndividualIndicesStats(indicesStats.Indices, now, acc)
+
+	return err
+}
+
+// gatherSortedIndicesStats gathers stats for all indices in no particular order.
+func (e *Elasticsearch) gatherIndividualIndicesStats(indices map[string]indexStat, now time.Time, acc telegraf.Accumulator) error {
+	// Sort indices into buckets based on their configured prefix, if any matches.
+	categorizedIndexNames := e.categorizeIndices(indices)
+	for _, matchingIndices := range categorizedIndexNames {
+		// Establish the number of each category of indices to use. User can configure to use only the latest 'X' amount.
+		indicesCount := len(matchingIndices)
+		indicesToTrackCount := indicesCount
+
+		// Sort the indices if configured to do so.
+		if e.NumMostRecentIndices > 0 {
+			if e.NumMostRecentIndices < indicesToTrackCount {
+				indicesToTrackCount = e.NumMostRecentIndices
+			}
+			sort.Strings(matchingIndices)
 		}
-		for m, s := range stats {
-			f := jsonparser.JSONFlattener{}
-			// parse Json, getting strings and bools
-			err := f.FullFlattenJSON("", s, true, true)
+
+		// Gather only the number of indexes that have been configured, in descending order (most recent, if date-stamped).
+		for i := indicesCount - 1; i >= indicesCount-indicesToTrackCount; i-- {
+			indexName := matchingIndices[i]
+
+			err := e.gatherSingleIndexStats(indexName, indices[indexName], now, acc)
 			if err != nil {
 				return err
 			}
-			acc.AddFields("elasticsearch_indices_stats_"+m, f.Fields, indexTag, now)
+		}
+	}
+
+	return nil
+}
+
+func (e *Elasticsearch) categorizeIndices(indices map[string]indexStat) map[string][]string {
+	categorizedIndexNames := map[string][]string{}
+
+	// If all indices are configured to be gathered, bucket them all together.
+	if len(e.IndicesInclude) == 0 || e.IndicesInclude[0] == "_all" {
+		for indexName := range indices {
+			categorizedIndexNames["_all"] = append(categorizedIndexNames["_all"], indexName)
 		}
 
-		if e.IndicesLevel == "shards" {
-			for shardNumber, shards := range index.Shards {
-				for _, shard := range shards {
+		return categorizedIndexNames
+	}
 
-					// Get Shard Stats
-					flattened := jsonparser.JSONFlattener{}
-					err := flattened.FullFlattenJSON("", shard, true, true)
-					if err != nil {
-						return err
-					}
+	// Bucket each returned index with its associated configured index (if any match).
+	for indexName := range indices {
+		match := indexName
+		for name, matcher := range e.indexMatchers {
+			// If a configured index matches one of the returned indexes, mark it as a match.
+			if matcher.Match(match) {
+				match = name
+				break
+			}
+		}
 
-					// determine shard tag and primary/replica designation
-					shardType := "replica"
-					if flattened.Fields["routing_primary"] == true {
-						shardType = "primary"
-					}
-					delete(flattened.Fields, "routing_primary")
+		// Bucket all matching indices together for sorting.
+		categorizedIndexNames[match] = append(categorizedIndexNames[match], indexName)
+	}
 
-					routingState, ok := flattened.Fields["routing_state"].(string)
-					if ok {
-						flattened.Fields["routing_state"] = mapShardStatusToCode(routingState)
-					}
+	return categorizedIndexNames
+}
 
-					routingNode, _ := flattened.Fields["routing_node"].(string)
-					shardTags := map[string]string{
-						"index_name": id,
-						"node_id":    routingNode,
-						"shard_name": string(shardNumber),
-						"type":       shardType,
-					}
+func (e *Elasticsearch) gatherSingleIndexStats(name string, index indexStat, now time.Time, acc telegraf.Accumulator) error {
+	indexTag := map[string]string{"index_name": name}
+	stats := map[string]interface{}{
+		"primaries": index.Primaries,
+		"total":     index.Total,
+	}
+	for m, s := range stats {
+		f := jsonparser.JSONFlattener{}
+		// parse Json, getting strings and bools
+		err := f.FullFlattenJSON("", s, true, true)
+		if err != nil {
+			return err
+		}
+		acc.AddFields("elasticsearch_indices_stats_"+m, f.Fields, indexTag, now)
+	}
 
-					for key, field := range flattened.Fields {
-						switch field.(type) {
-						case string, bool:
-							delete(flattened.Fields, key)
-						}
-					}
-
-					acc.AddFields("elasticsearch_indices_stats_shards",
-						flattened.Fields,
-						shardTags,
-						now)
+	if e.IndicesLevel == "shards" {
+		for shardNumber, shards := range index.Shards {
+			for _, shard := range shards {
+				// Get Shard Stats
+				flattened := jsonparser.JSONFlattener{}
+				err := flattened.FullFlattenJSON("", shard, true, true)
+				if err != nil {
+					return err
 				}
+
+				// determine shard tag and primary/replica designation
+				shardType := "replica"
+				routingPrimary, _ := flattened.Fields["routing_primary"].(bool)
+				if routingPrimary {
+					shardType = "primary"
+				}
+				delete(flattened.Fields, "routing_primary")
+
+				routingState, ok := flattened.Fields["routing_state"].(string)
+				if ok {
+					flattened.Fields["routing_state"] = mapShardStatusToCode(routingState)
+				}
+
+				routingNode, _ := flattened.Fields["routing_node"].(string)
+				shardTags := map[string]string{
+					"index_name": name,
+					"node_id":    routingNode,
+					"shard_name": shardNumber,
+					"type":       shardType,
+				}
+
+				for key, field := range flattened.Fields {
+					switch field.(type) {
+					case string, bool:
+						delete(flattened.Fields, key)
+					}
+				}
+
+				acc.AddFields("elasticsearch_indices_stats_shards",
+					flattened.Fields,
+					shardTags,
+					now)
 			}
 		}
 	}
@@ -613,9 +650,13 @@ func (e *Elasticsearch) getCatMaster(url string) (string, error) {
 		// NOTE: we are not going to read/discard r.Body under the assumption we'd prefer
 		// to let the underlying transport close the connection and re-establish a new one for
 		// future calls.
-		return "", fmt.Errorf("elasticsearch: Unable to retrieve master node information. API responded with status-code %d, expected %d", r.StatusCode, http.StatusOK)
+		return "", fmt.Errorf(
+			"elasticsearch: Unable to retrieve master node information. API responded with status-code %d, expected %d",
+			r.StatusCode,
+			http.StatusOK,
+		)
 	}
-	response, err := ioutil.ReadAll(r.Body)
+	response, err := io.ReadAll(r.Body)
 
 	if err != nil {
 		return "", err
@@ -649,11 +690,24 @@ func (e *Elasticsearch) gatherJSONData(url string, v interface{}) error {
 			r.StatusCode, http.StatusOK)
 	}
 
-	if err = json.NewDecoder(r.Body).Decode(v); err != nil {
-		return err
+	return json.NewDecoder(r.Body).Decode(v)
+}
+
+func (e *Elasticsearch) compileIndexMatchers() (map[string]filter.Filter, error) {
+	indexMatchers := map[string]filter.Filter{}
+	var err error
+
+	// Compile each configured index into a glob matcher.
+	for _, configuredIndex := range e.IndicesInclude {
+		if _, exists := indexMatchers[configuredIndex]; !exists {
+			indexMatchers[configuredIndex], err = filter.Compile([]string{configuredIndex})
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 
-	return nil
+	return indexMatchers, nil
 }
 
 func init() {

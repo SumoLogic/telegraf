@@ -8,8 +8,9 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/influxdata/telegraf/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/influxdata/telegraf/testutil"
 )
 
 const sampleStatusResponse = `
@@ -166,31 +167,27 @@ func TestNginxPlusGeneratesMetrics(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var rsp string
 
-		if r.URL.Path == "/status" {
-			rsp = sampleStatusResponse
-			w.Header()["Content-Type"] = []string{"application/json"}
-		} else {
-			panic("Cannot handle request")
-		}
+		require.Equal(t, "/status", r.URL.Path, "Cannot handle request")
 
-		fmt.Fprintln(w, rsp)
+		rsp = sampleStatusResponse
+		w.Header()["Content-Type"] = []string{"application/json"}
+
+		_, err := fmt.Fprintln(w, rsp)
+		require.NoError(t, err)
 	}))
 	defer ts.Close()
 
 	n := &NginxSTS{
-		Urls: []string{fmt.Sprintf("%s/status", ts.URL)},
+		Urls: []string{ts.URL + "/status"},
 	}
 
 	var acc testutil.Accumulator
 
 	err := n.Gather(&acc)
-
 	require.NoError(t, err)
 
 	addr, err := url.Parse(ts.URL)
-	if err != nil {
-		panic(err)
-	}
+	require.NoError(t, err)
 
 	host, port, err := net.SplitHostPort(addr.Host)
 	if err != nil {

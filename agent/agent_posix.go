@@ -1,4 +1,4 @@
-// +build !windows
+//go:build !windows
 
 package agent
 
@@ -15,5 +15,5 @@ func watchForFlushSignal(flushRequested chan os.Signal) {
 }
 
 func stopListeningForFlushSignal(flushRequested chan os.Signal) {
-	defer signal.Stop(flushRequested)
+	signal.Stop(flushRequested)
 }

@@ -2,6 +2,7 @@ package shim
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/logger"
 	"github.com/influxdata/telegraf/plugins/serializers/influx"
 )
 
@@ -37,7 +39,7 @@ type Shim struct {
 	Processor telegraf.StreamingProcessor
 	Output    telegraf.Output
 
-	log *Logger
+	log telegraf.Logger
 
 	// streams
 	stdin  io.Reader
@@ -58,7 +60,7 @@ func New() *Shim {
 		stdin:    os.Stdin,
 		stdout:   os.Stdout,
 		stderr:   os.Stderr,
-		log:      NewLogger(),
+		log:      logger.NewLogger("", "", ""),
 	}
 }
 
@@ -90,7 +92,7 @@ func (s *Shim) Run(pollInterval time.Duration) error {
 			return fmt.Errorf("RunOutput error: %w", err)
 		}
 	} else {
-		return fmt.Errorf("Nothing to run")
+		return errors.New("nothing to run")
 	}
 
 	return nil
@@ -101,8 +103,11 @@ func hasQuit(ctx context.Context) bool {
 }
 
 func (s *Shim) writeProcessedMetrics() error {
-	serializer := influx.NewSerializer()
-	for {
+	serializer := &influx.Serializer{}
+	if err := serializer.Init(); err != nil {
+		return fmt.Errorf("creating serializer failed: %w", err)
+	}
+	for { //nolint:gosimple // for-select used on purpose
 		select {
 		case m, open := <-s.metricCh:
 			if !open {
@@ -110,10 +115,13 @@ func (s *Shim) writeProcessedMetrics() error {
 			}
 			b, err := serializer.Serialize(m)
 			if err != nil {
-				return fmt.Errorf("failed to serialize metric: %s", err)
+				return fmt.Errorf("failed to serialize metric: %w", err)
 			}
 			// Write this to stdout
-			fmt.Fprint(s.stdout, string(b))
+			_, err = fmt.Fprint(s.stdout, string(b))
+			if err != nil {
+				return fmt.Errorf("failed to write metric: %w", err)
+			}
 		}
 	}
 }

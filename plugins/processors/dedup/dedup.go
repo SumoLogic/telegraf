@@ -1,48 +1,38 @@
+//go:generate ../../../tools/readme_config_includer/generator
 package dedup
 
 import (
+	_ "embed"
+	"fmt"
 	"time"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/internal"
+	"github.com/influxdata/telegraf/config"
+	"github.com/influxdata/telegraf/plugins/parsers/influx"
 	"github.com/influxdata/telegraf/plugins/processors"
+	influxSerializer "github.com/influxdata/telegraf/plugins/serializers/influx"
 )
 
-var sampleConfig = `
-  ## Maximum time to suppress output
-  dedup_interval = "600s"
-`
+//go:embed sample.conf
+var sampleConfig string
 
 type Dedup struct {
-	DedupInterval internal.Duration `toml:"dedup_interval"`
+	DedupInterval config.Duration `toml:"dedup_interval"`
 	FlushTime     time.Time
 	Cache         map[uint64]telegraf.Metric
-}
-
-func (d *Dedup) SampleConfig() string {
-	return sampleConfig
-}
-
-func (d *Dedup) Description() string {
-	return "Filter metrics with repeating field values"
-}
-
-// Remove single item from slice
-func remove(slice []telegraf.Metric, i int) []telegraf.Metric {
-	slice[len(slice)-1], slice[i] = slice[i], slice[len(slice)-1]
-	return slice[:len(slice)-1]
+	Log           telegraf.Logger `toml:"-"`
 }
 
 // Remove expired items from cache
 func (d *Dedup) cleanup() {
 	// No need to cleanup cache too often. Lets save some CPU
-	if time.Since(d.FlushTime) < d.DedupInterval.Duration {
+	if time.Since(d.FlushTime) < time.Duration(d.DedupInterval) {
 		return
 	}
 	d.FlushTime = time.Now()
-	keep := make(map[uint64]telegraf.Metric, 0)
+	keep := make(map[uint64]telegraf.Metric)
 	for id, metric := range d.Cache {
-		if time.Since(metric.Time()) < d.DedupInterval.Duration {
+		if time.Since(metric.Time()) < time.Duration(d.DedupInterval) {
 			keep[id] = metric
 		}
 	}
@@ -55,21 +45,30 @@ func (d *Dedup) save(metric telegraf.Metric, id uint64) {
 	d.Cache[id].Accept()
 }
 
+func (*Dedup) SampleConfig() string {
+	return sampleConfig
+}
+
 // main processing method
 func (d *Dedup) Apply(metrics ...telegraf.Metric) []telegraf.Metric {
-	for idx, metric := range metrics {
+	idx := 0
+	for _, metric := range metrics {
 		id := metric.HashID()
 		m, ok := d.Cache[id]
 
 		// If not in cache then just save it
 		if !ok {
 			d.save(metric, id)
+			metrics[idx] = metric
+			idx++
 			continue
 		}
 
 		// If cache item has expired then refresh it
-		if time.Since(m.Time()) >= d.DedupInterval.Duration {
+		if time.Since(m.Time()) >= time.Duration(d.DedupInterval) {
 			d.save(metric, id)
+			metrics[idx] = metric
+			idx++
 			continue
 		}
 
@@ -103,24 +102,58 @@ func (d *Dedup) Apply(metrics ...telegraf.Metric) []telegraf.Metric {
 		// If any field value has changed then refresh the cache
 		if changed {
 			d.save(metric, id)
+			metrics[idx] = metric
+			idx++
 			continue
 		}
 
 		if sametime && added {
+			metrics[idx] = metric
+			idx++
 			continue
 		}
 
 		// In any other case remove metric from the output
-		metrics = remove(metrics, idx)
+		metric.Drop()
 	}
+	metrics = metrics[:idx]
 	d.cleanup()
 	return metrics
+}
+
+func (d *Dedup) GetState() interface{} {
+	s := &influxSerializer.Serializer{}
+	v := make([]telegraf.Metric, 0, len(d.Cache))
+	for _, value := range d.Cache {
+		v = append(v, value)
+	}
+	state, err := s.SerializeBatch(v)
+	if err != nil {
+		d.Log.Errorf("dedup processor failed to serialize metric batch: %v", err)
+	}
+	return state
+}
+
+func (d *Dedup) SetState(state interface{}) error {
+	p := &influx.Parser{}
+	if err := p.Init(); err != nil {
+		return err
+	}
+	data, ok := state.([]byte)
+	if !ok {
+		return fmt.Errorf("state has wrong type %T", state)
+	}
+	metrics, err := p.Parse(data)
+	if err == nil {
+		d.Apply(metrics...)
+	}
+	return nil
 }
 
 func init() {
 	processors.Add("dedup", func() telegraf.Processor {
 		return &Dedup{
-			DedupInterval: internal.Duration{Duration: 10 * time.Minute},
+			DedupInterval: config.Duration(10 * time.Minute),
 			FlushTime:     time.Now(),
 			Cache:         make(map[uint64]telegraf.Metric),
 		}

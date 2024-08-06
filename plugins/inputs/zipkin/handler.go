@@ -3,14 +3,14 @@ package zipkin
 import (
 	"compress/gzip"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"mime"
 	"net/http"
 	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/influxdata/telegraf/plugins/inputs/zipkin/codec"
-	"github.com/influxdata/telegraf/plugins/inputs/zipkin/codec/jsonV1"
+	json_v1 "github.com/influxdata/telegraf/plugins/inputs/zipkin/codec/jsonV1"
 	"github.com/influxdata/telegraf/plugins/inputs/zipkin/codec/thrift"
 )
 
@@ -88,7 +88,7 @@ func (s *SpanHandler) Spans(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnsupportedMediaType)
 	}
 
-	octets, err := ioutil.ReadAll(body)
+	octets, err := io.ReadAll(body)
 	if err != nil {
 		s.recorder.Error(err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -124,7 +124,7 @@ func (s *SpanHandler) Spans(w http.ResponseWriter, r *http.Request) {
 func ContentDecoder(r *http.Request) (codec.Decoder, error) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
-		return &jsonV1.JSON{}, nil
+		return &json_v1.JSON{}, nil
 	}
 
 	for _, v := range strings.Split(contentType, ",") {
@@ -133,7 +133,7 @@ func ContentDecoder(r *http.Request) (codec.Decoder, error) {
 			break
 		}
 		if t == "application/json" {
-			return &jsonV1.JSON{}, nil
+			return &json_v1.JSON{}, nil
 		} else if t == "application/x-thrift" {
 			return &thrift.Thrift{}, nil
 		}

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/agent"
 	"github.com/influxdata/telegraf/plugins/inputs"
@@ -26,7 +26,6 @@ import (
 type empty struct{}
 
 var (
-	forever       = 100 * 365 * 24 * time.Hour
 	envVarEscaper = strings.NewReplacer(
 		`"`, `\"`,
 		`\`, `\\`,
@@ -58,8 +57,7 @@ var (
 
 // New creates a new shim interface
 func New() *Shim {
-	fmt.Fprintf(os.Stderr, "%s is deprecated; please change your import to %s\n",
-		oldpkg, newpkg)
+	fmt.Fprintf(os.Stderr, "%s is deprecated; please change your import to %s\n", oldpkg, newpkg)
 	return &Shim{
 		stdin:  os.Stdin,
 		stdout: os.Stdout,
@@ -72,7 +70,7 @@ func (s *Shim) AddInput(input telegraf.Input) error {
 	if p, ok := input.(telegraf.Initializer); ok {
 		err := p.Init()
 		if err != nil {
-			return fmt.Errorf("failed to init input: %s", err)
+			return fmt.Errorf("failed to init input: %w", err)
 		}
 	}
 
@@ -106,7 +104,10 @@ func (s *Shim) Run(pollInterval time.Duration) error {
 	collectMetricsPrompt := make(chan os.Signal, 1)
 	listenForCollectMetricsSignals(ctx, collectMetricsPrompt)
 
-	serializer := influx.NewSerializer()
+	serializer := &influx.Serializer{}
+	if err := serializer.Init(); err != nil {
+		return fmt.Errorf("creating serializer failed: %w", err)
+	}
 
 	for _, input := range s.Inputs {
 		wrappedInput := inputShim{Input: input}
@@ -116,7 +117,7 @@ func (s *Shim) Run(pollInterval time.Duration) error {
 
 		if serviceInput, ok := input.(telegraf.ServiceInput); ok {
 			if err := serviceInput.Start(acc); err != nil {
-				return fmt.Errorf("failed to start input: %s", err)
+				return fmt.Errorf("failed to start input: %w", err)
 			}
 		}
 		gatherPromptCh := make(chan empty, 1)
@@ -153,10 +154,12 @@ loop:
 			}
 			b, err := serializer.Serialize(m)
 			if err != nil {
-				return fmt.Errorf("failed to serialize metric: %s", err)
+				return fmt.Errorf("failed to serialize metric: %w", err)
 			}
 			// Write this to stdout
-			fmt.Fprint(s.stdout, string(b))
+			if _, err := fmt.Fprint(s.stdout, string(b)); err != nil {
+				return fmt.Errorf("failed to write %q to stdout: %w", string(b), err)
+			}
 		}
 	}
 
@@ -233,11 +236,17 @@ func (s *Shim) startGathering(ctx context.Context, input telegraf.Input, acc tel
 			return
 		case <-gatherPromptCh:
 			if err := input.Gather(acc); err != nil {
-				fmt.Fprintf(s.stderr, "failed to gather metrics: %s", err)
+				if _, perr := fmt.Fprintf(s.stderr, "failed to gather metrics: %s", err); perr != nil {
+					acc.AddError(err)
+					acc.AddError(perr)
+				}
 			}
 		case <-t.C:
 			if err := input.Gather(acc); err != nil {
-				fmt.Fprintf(s.stderr, "failed to gather metrics: %s", err)
+				if _, perr := fmt.Fprintf(s.stderr, "failed to gather metrics: %s", err); perr != nil {
+					acc.AddError(err)
+					acc.AddError(perr)
+				}
 			}
 		}
 	}
@@ -268,7 +277,7 @@ func LoadConfig(filePath *string) ([]telegraf.Input, error) {
 		return DefaultImportedPlugins()
 	}
 
-	b, err := ioutil.ReadFile(*filePath)
+	b, err := os.ReadFile(*filePath)
 	if err != nil {
 		return nil, err
 	}

@@ -2,43 +2,60 @@ package cratedb
 
 import (
 	"database/sql"
-	"os"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go/wait"
+
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/metric"
+	"github.com/influxdata/telegraf/models"
 	"github.com/influxdata/telegraf/testutil"
-	"github.com/stretchr/testify/require"
 )
 
-func TestConnectAndWrite(t *testing.T) {
+const servicePort = "5432"
+
+func createTestContainer(t *testing.T) *testutil.Container {
+	container := testutil.Container{
+		Image:        "crate",
+		ExposedPorts: []string{servicePort},
+		Entrypoint: []string{
+			"/docker-entrypoint.sh",
+			"-Cdiscovery.type=single-node",
+		},
+		WaitingFor: wait.ForAll(
+			wait.ForListeningPort(servicePort),
+			wait.ForLog("recovered [0] indices into cluster_state"),
+		),
+	}
+	err := container.Start()
+	require.NoError(t, err, "failed to start container")
+
+	return &container
+}
+
+func TestConnectAndWriteIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	if os.Getenv("CIRCLE_PROJECT_REPONAME") != "" {
-		t.Skip("Skipping test on CircleCI due to docker failures")
-	}
+	container := createTestContainer(t)
+	defer container.Terminate()
+	url := fmt.Sprintf("postgres://crate@%s:%s/test", container.Address, container.Ports[servicePort])
 
-	url := testURL()
-	table := "test"
-
-	// dropSQL drops our table before each test. This simplifies changing the
-	// schema during development :).
-	dropSQL := "DROP TABLE IF EXISTS " + escapeString(table, `"`)
 	db, err := sql.Open("pgx", url)
-	require.NoError(t, err)
-	_, err = db.Exec(dropSQL)
 	require.NoError(t, err)
 	defer db.Close()
 
 	c := &CrateDB{
 		URL:         url,
-		Table:       table,
-		Timeout:     internal.Duration{Duration: time.Second * 5},
+		Table:       "testing",
+		Timeout:     config.Duration(time.Second * 5),
 		TableCreate: true,
 	}
 
@@ -50,17 +67,8 @@ func TestConnectAndWrite(t *testing.T) {
 	// the rows using their primary keys in order to take advantage of
 	// read-after-write consistency in CrateDB.
 	for _, m := range metrics {
-		hashIDVal, err := escapeValue(hashID(m))
-		require.NoError(t, err)
-		timestamp, err := escapeValue(m.Time())
-		require.NoError(t, err)
-
 		var id int64
-		row := db.QueryRow(
-			"SELECT hash_id FROM " + escapeString(table, `"`) + " " +
-				"WHERE hash_id = " + hashIDVal + " " +
-				"AND timestamp = " + timestamp,
-		)
+		row := db.QueryRow("SELECT hash_id FROM testing WHERE hash_id = ? AND timestamp = ?", hashID(m), m.Time())
 		require.NoError(t, row.Scan(&id))
 		// We could check the whole row, but this is meant to be more of a smoke
 		// test, so just checking the HashID seems fine.
@@ -70,7 +78,77 @@ func TestConnectAndWrite(t *testing.T) {
 	require.NoError(t, c.Close())
 }
 
-func Test_insertSQL(t *testing.T) {
+func TestConnectionIssueAtStartup(t *testing.T) {
+	// Test case for https://github.com/influxdata/telegraf/issues/13278
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	container := testutil.Container{
+		Image:        "crate",
+		ExposedPorts: []string{servicePort},
+		Entrypoint: []string{
+			"/docker-entrypoint.sh",
+			"-Cdiscovery.type=single-node",
+		},
+		WaitingFor: wait.ForAll(
+			wait.ForListeningPort(servicePort),
+			wait.ForLog("recovered [0] indices into cluster_state"),
+		),
+	}
+	require.NoError(t, container.Start(), "failed to start container")
+	defer container.Terminate()
+	url := fmt.Sprintf("postgres://crate@%s:%s/test", container.Address, container.Ports[servicePort])
+
+	// Pause the container for connectivity issues
+	require.NoError(t, container.Pause())
+
+	// Create a model to be able to use the startup retry strategy
+	plugin := &CrateDB{
+		URL:         url,
+		Table:       "testing",
+		Timeout:     config.Duration(time.Second * 5),
+		TableCreate: true,
+	}
+	model := models.NewRunningOutput(
+		plugin,
+		&models.OutputConfig{
+			Name:                 "cratedb",
+			StartupErrorBehavior: "retry",
+		},
+		1000, 1000,
+	)
+	require.NoError(t, model.Init())
+
+	// The connect call should succeed even though the table creation was not
+	// successful due to the "retry" strategy
+	require.NoError(t, model.Connect())
+
+	// Writing the metrics in this state should fail because we are not fully
+	// started up
+	metrics := testutil.MockMetrics()
+	for _, m := range metrics {
+		model.AddMetric(m)
+	}
+	require.ErrorIs(t, model.WriteBatch(), internal.ErrNotConnected)
+
+	// Unpause the container, now writes should succeed
+	require.NoError(t, container.Resume())
+	require.NoError(t, model.WriteBatch())
+	defer model.Close()
+
+	// Verify that the metrics were actually written
+	for _, m := range metrics {
+		mid := hashID(m)
+		row := plugin.db.QueryRow("SELECT hash_id FROM testing WHERE hash_id = ? AND timestamp = ?", mid, m.Time())
+
+		var id int64
+		require.NoError(t, row.Scan(&id))
+		require.Equal(t, id, mid)
+	}
+}
+
+func TestInsertSQL(t *testing.T) {
 	tests := []struct {
 		Metrics []telegraf.Metric
 		Want    string
@@ -86,7 +164,7 @@ VALUES
 	}
 
 	for _, test := range tests {
-		if got, err := insertSQL("my_table", test.Metrics); err != nil {
+		if got, err := insertSQL("my_table", "_", test.Metrics); err != nil {
 			t.Error(err)
 		} else if got != test.Want {
 			t.Errorf("got:\n%s\n\nwant:\n%s", got, test.Want)
@@ -94,19 +172,13 @@ VALUES
 	}
 }
 
-func Test_escapeValue(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+type escapeValueTest struct {
+	Value interface{}
+	Want  string
+}
 
-	if os.Getenv("CIRCLE_PROJECT_REPONAME") != "" {
-		t.Skip("Skipping test on CircleCI due to docker failures")
-	}
-
-	tests := []struct {
-		Val  interface{}
-		Want string
-	}{
+func escapeValueTests() []escapeValueTest {
+	return []escapeValueTest{
 		// string
 		{`foo`, `'foo'`},
 		{`foo'bar 'yeah`, `'foo''bar ''yeah'`},
@@ -125,6 +197,7 @@ func Test_escapeValue(t *testing.T) {
 		{map[string]string(nil), `{}`},
 		{map[string]string{"foo": "bar"}, `{"foo" = 'bar'}`},
 		{map[string]string{"foo": "bar", "one": "more"}, `{"foo" = 'bar', "one" = 'more'}`},
+		{map[string]string{"f.oo": "bar", "o.n.e": "more"}, `{"f_oo" = 'bar', "o_n_e" = 'more'}`},
 		// map[string]interface{}
 		{map[string]interface{}{}, `{}`},
 		{map[string]interface{}(nil), `{}`},
@@ -133,26 +206,47 @@ func Test_escapeValue(t *testing.T) {
 		{map[string]interface{}{"foo": map[string]interface{}{"one": "more"}}, `{"foo" = {"one" = 'more'}}`},
 		{map[string]interface{}{`fo"o`: `b'ar`, `ab'c`: `xy"z`, `on"""e`: `mo'''re`}, `{"ab'c" = 'xy"z', "fo""o" = 'b''ar', "on""""""e" = 'mo''''''re'}`},
 	}
+}
 
-	url := testURL()
+func TestEscapeValueIntegration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	container := createTestContainer(t)
+	defer container.Terminate()
+	url := fmt.Sprintf("postgres://crate@%s:%s/test", container.Address, container.Ports[servicePort])
+
 	db, err := sql.Open("pgx", url)
 	require.NoError(t, err)
 	defer db.Close()
 
+	tests := escapeValueTests()
 	for _, test := range tests {
-		got, err := escapeValue(test.Val)
-		if err != nil {
-			t.Errorf("val: %#v: %s", test.Val, err)
-		} else if got != test.Want {
-			t.Errorf("got:\n%s\n\nwant:\n%s", got, test.Want)
-		}
+		got, err := escapeValue(test.Value, "_")
+		require.NoError(t, err, "value: %#v", test.Value)
 
 		// This is a smoke test that will blow up if our escaping causing a SQL
-		// syntax error, which may allow for an attack.
+		// syntax error, which may allow for an attack.=
 		var reply interface{}
-		row := db.QueryRow("SELECT " + got)
+		row := db.QueryRow("SELECT ?", got)
 		require.NoError(t, row.Scan(&reply))
 	}
+}
+
+func TestEscapeValue(t *testing.T) {
+	tests := escapeValueTests()
+	for _, test := range tests {
+		got, err := escapeValue(test.Value, "_")
+		require.NoError(t, err, "value: %#v", test.Value)
+		require.Equal(t, test.Want, got)
+	}
+}
+
+func TestCircumventingStringEscape(t *testing.T) {
+	value, err := escapeObject(map[string]interface{}{"a.b": "c"}, `_"`)
+	require.NoError(t, err)
+	require.Equal(t, `{"a_""b" = 'c'}`, value)
 }
 
 func Test_hashID(t *testing.T) {
@@ -205,23 +299,14 @@ func Test_hashID(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		m, err := metric.New(
+		m := metric.New(
 			test.Name,
 			test.Tags,
 			test.Fields,
 			time.Date(2009, time.November, 10, 23, 0, 0, 0, time.UTC),
 		)
-		require.NoError(t, err)
 		if got := hashID(m); got != test.Want {
 			t.Errorf("test #%d: got=%d want=%d", i, got, test.Want)
 		}
 	}
-}
-
-func testURL() string {
-	url := os.Getenv("CRATE_URL")
-	if url == "" {
-		return "postgres://" + testutil.GetLocalHost() + ":6543/test?sslmode=disable"
-	}
-	return url
 }

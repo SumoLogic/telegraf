@@ -1,7 +1,9 @@
+//go:generate ../../../tools/readme_config_includer/generator
 package execd
 
 import (
 	"bufio"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
@@ -11,66 +13,49 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal/process"
-	"github.com/influxdata/telegraf/plugins/parsers"
+	"github.com/influxdata/telegraf/plugins/parsers/influx"
 	"github.com/influxdata/telegraf/plugins/processors"
 	"github.com/influxdata/telegraf/plugins/serializers"
 )
 
-const sampleConfig = `
-	## Program to run as daemon
-	## eg: command = ["/path/to/your_program", "arg1", "arg2"]
-	command = ["cat"]
-
-  ## Delay before the process is restarted after an unexpected termination
-  restart_delay = "10s"
-`
+//go:embed sample.conf
+var sampleConfig string
 
 type Execd struct {
 	Command      []string        `toml:"command"`
+	Environment  []string        `toml:"environment"`
 	RestartDelay config.Duration `toml:"restart_delay"`
 	Log          telegraf.Logger
 
-	parserConfig     *parsers.Config
-	parser           parsers.Parser
-	serializerConfig *serializers.Config
-	serializer       serializers.Serializer
-	acc              telegraf.Accumulator
-	process          *process.Process
+	parser     telegraf.Parser
+	serializer serializers.Serializer
+	acc        telegraf.Accumulator
+	process    *process.Process
 }
 
 func New() *Execd {
 	return &Execd{
 		RestartDelay: config.Duration(10 * time.Second),
-		parserConfig: &parsers.Config{
-			DataFormat: "influx",
-		},
-		serializerConfig: &serializers.Config{
-			DataFormat: "influx",
-		},
 	}
 }
 
-func (e *Execd) SampleConfig() string {
+func (e *Execd) SetParser(p telegraf.Parser) {
+	e.parser = p
+}
+
+func (e *Execd) SetSerializer(s telegraf.Serializer) {
+	e.serializer = s
+}
+
+func (*Execd) SampleConfig() string {
 	return sampleConfig
 }
 
-func (e *Execd) Description() string {
-	return "Run executable as long-running processor plugin"
-}
-
 func (e *Execd) Start(acc telegraf.Accumulator) error {
-	var err error
-	e.parser, err = parsers.NewParser(e.parserConfig)
-	if err != nil {
-		return fmt.Errorf("error creating parser: %w", err)
-	}
-	e.serializer, err = serializers.NewSerializer(e.serializerConfig)
-	if err != nil {
-		return fmt.Errorf("error creating serializer: %w", err)
-	}
 	e.acc = acc
 
-	e.process, err = process.New(e.Command)
+	var err error
+	e.process, err = process.New(e.Command, e.Environment)
 	if err != nil {
 		return fmt.Errorf("error creating new process: %w", err)
 	}
@@ -93,7 +78,7 @@ func (e *Execd) Start(acc telegraf.Accumulator) error {
 	return nil
 }
 
-func (e *Execd) Add(m telegraf.Metric, acc telegraf.Accumulator) error {
+func (e *Execd) Add(m telegraf.Metric, _ telegraf.Accumulator) error {
 	b, err := e.serializer.Serialize(m)
 	if err != nil {
 		return fmt.Errorf("metric serializing error: %w", err)
@@ -107,16 +92,21 @@ func (e *Execd) Add(m telegraf.Metric, acc telegraf.Accumulator) error {
 	// We cannot maintain tracking metrics at the moment because input/output
 	// is done asynchronously and we don't have any metric metadata to tie the
 	// output metric back to the original input metric.
-	m.Drop()
+	m.Accept()
 	return nil
 }
 
-func (e *Execd) Stop() error {
+func (e *Execd) Stop() {
 	e.process.Stop()
-	return nil
 }
 
 func (e *Execd) cmdReadOut(out io.Reader) {
+	// Prefer using the StreamParser when parsing influx format.
+	if _, isInfluxParser := e.parser.(*influx.Parser); isInfluxParser {
+		e.cmdReadOutStream(out)
+		return
+	}
+
 	scanner := bufio.NewScanner(out)
 	scanBuf := make([]byte, 4096)
 	scanner.Buffer(scanBuf, 262144)
@@ -134,6 +124,34 @@ func (e *Execd) cmdReadOut(out io.Reader) {
 
 	if err := scanner.Err(); err != nil {
 		e.Log.Errorf("Error reading stdout: %s", err)
+	}
+}
+
+func (e *Execd) cmdReadOutStream(out io.Reader) {
+	parser := influx.NewStreamParser(out)
+
+	for {
+		metric, err := parser.Next()
+
+		if err != nil {
+			// Stop parsing when we've reached the end.
+			if errors.Is(err, influx.EOF) {
+				break
+			}
+
+			var parseErr *influx.ParseError
+			if errors.As(err, &parseErr) {
+				// Continue past parse errors.
+				e.acc.AddError(parseErr)
+				continue
+			}
+
+			// Stop reading on any non-recoverable error.
+			e.acc.AddError(err)
+			return
+		}
+
+		e.acc.AddMetric(metric)
 	}
 }
 

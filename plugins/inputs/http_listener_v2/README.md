@@ -1,26 +1,61 @@
 # HTTP Listener v2 Input Plugin
 
 HTTP Listener v2 is a service input plugin that listens for metrics sent via
-HTTP. Metrics may be sent in any supported [data format][data_format].
+HTTP. Metrics may be sent in any supported [data format][data_format]. For
+metrics in [InfluxDB Line Protocol][line_protocol] it's recommended to use the
+[`influxdb_listener`][influxdb_listener] or
+[`influxdb_v2_listener`][influxdb_v2_listener] instead.
 
 **Note:** The plugin previously known as `http_listener` has been renamed
 `influxdb_listener`.  If you would like Telegraf to act as a proxy/relay for
-InfluxDB it is recommended to use [`influxdb_listener`][influxdb_listener].
+InfluxDB it is recommended to use [`influxdb_listener`][influxdb_listener] or
+[`influxdb_v2_listener`][influxdb_v2_listener].
 
-### Configuration:
+## Service Input <!-- @/docs/includes/service_input.md -->
 
-This is a sample configuration for the plugin.
+This plugin is a service input. Normal plugins gather metrics determined by the
+interval setting. Service plugins start a service to listens and waits for
+metrics or events to occur. Service plugins have two key differences from
+normal plugins:
 
-```toml
+1. The global or plugin specific `interval` setting may not apply
+2. The CLI options of `--test`, `--test-wait`, and `--once` may not produce
+   output for this plugin
+
+## Global configuration options <!-- @/docs/includes/plugin_config.md -->
+
+In addition to the plugin-specific configuration settings, plugins support
+additional global and plugin configuration settings. These settings are used to
+modify metrics, tags, and field or create aliases and configure ordering, etc.
+See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
+
+[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+
+## Configuration
+
+```toml @sample.conf
+# Generic HTTP write listener
 [[inputs.http_listener_v2]]
   ## Address and port to host HTTP listener on
   service_address = ":8080"
 
-  ## Path to listen to.
-  # path = "/telegraf"
+  ## Paths to listen to.
+  # paths = ["/telegraf"]
+
+  ## Save path as http_listener_v2_path tag if set to true
+  # path_tag = false
 
   ## HTTP methods to accept.
   # methods = ["POST", "PUT"]
+
+  ## Optional HTTP headers
+  ## These headers are applied to the server that is listening for HTTP
+  ## requests and included in responses.
+  # http_headers = {"HTTP_HEADER" = "TAG_NAME"}
+
+  ## HTTP Return Success Code
+  ## This is the HTTP code that will be returned on success
+  # http_success_code = 204
 
   ## maximum duration before timing out read of the request
   # read_timeout = "10s"
@@ -43,6 +78,9 @@ This is a sample configuration for the plugin.
   # tls_cert = "/etc/telegraf/cert.pem"
   # tls_key = "/etc/telegraf/key.pem"
 
+  ## Minimal TLS version accepted by the server
+  # tls_min_version = "TLS12"
+
   ## Optional username and password to accept for HTTP basic authentication.
   ## You probably want to make sure you have TLS configured above for this.
   # basic_username = "foobar"
@@ -60,26 +98,34 @@ This is a sample configuration for the plugin.
   data_format = "influx"
 ```
 
-### Metrics:
+## Metrics
 
-Metrics are collected from the part of the request specified by the `data_source` param and are parsed depending on the value of `data_format`.
+Metrics are collected from the part of the request specified by the
+`data_source` param and are parsed depending on the value of `data_format`.
 
-### Troubleshooting:
+## Example Output
 
-**Send Line Protocol**
-```
+## Troubleshooting
+
+Send Line Protocol:
+
+```shell
 curl -i -XPOST 'http://localhost:8080/telegraf' --data-binary 'cpu_load_short,host=server01,region=us-west value=0.64 1434055562000000000'
 ```
 
-**Send JSON**
-```
+Send JSON:
+
+```shell
 curl -i -XPOST 'http://localhost:8080/telegraf' --data-binary '{"value1": 42, "value2": 42}'
 ```
 
-**Send query params**
-```
+Send query params:
+
+```shell
 curl -i -XGET 'http://localhost:8080/telegraf?host=server01&value=0.42'
 ```
 
 [data_format]: /docs/DATA_FORMATS_INPUT.md
 [influxdb_listener]: /plugins/inputs/influxdb_listener/README.md
+[line_protocol]: https://docs.influxdata.com/influxdb/cloud/reference/syntax/line-protocol/
+[influxdb_v2_listener]: /plugins/inputs/influxdb_v2_listener/README.md

@@ -1,4 +1,4 @@
-// +build !windows
+//go:build !windows
 
 package internal
 
@@ -19,14 +19,22 @@ const KillGrace = 5 * time.Second
 func WaitTimeout(c *exec.Cmd, timeout time.Duration) error {
 	var kill *time.Timer
 	term := time.AfterFunc(timeout, func() {
-		err := c.Process.Signal(syscall.SIGTERM)
+		err := syscall.Kill(-c.Process.Pid, syscall.SIGTERM)
+		if err != nil {
+			log.Printf("E! [agent] Error terminating process children: %s", err)
+		}
+		err = c.Process.Signal(syscall.SIGTERM)
 		if err != nil {
 			log.Printf("E! [agent] Error terminating process: %s", err)
 			return
 		}
 
 		kill = time.AfterFunc(KillGrace, func() {
-			err := c.Process.Kill()
+			err := syscall.Kill(-c.Process.Pid, syscall.SIGKILL)
+			if err != nil {
+				log.Printf("E! [agent] Error terminating process children: %s", err)
+			}
+			err = c.Process.Kill()
 			if err != nil {
 				log.Printf("E! [agent] Error killing process: %s", err)
 				return
@@ -50,7 +58,7 @@ func WaitTimeout(c *exec.Cmd, timeout time.Duration) error {
 
 	// If SIGTERM was sent then treat any process error as a timeout.
 	if termSent {
-		return TimeoutErr
+		return ErrTimeout
 	}
 
 	// Otherwise there was an error unrelated to termination.

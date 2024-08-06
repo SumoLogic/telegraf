@@ -1,8 +1,12 @@
+//go:generate ../../../tools/readme_config_includer/generator
+//go:build linux
+
 package bcache
 
 import (
+	_ "embed"
 	"errors"
-	"io/ioutil"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,35 +16,21 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
+//go:embed sample.conf
+var sampleConfig string
+
 type Bcache struct {
 	BcachePath string
 	BcacheDevs []string
 }
 
-var sampleConfig = `
-  ## Bcache sets path
-  ## If not specified, then default is:
-  bcachePath = "/sys/fs/bcache"
-
-  ## By default, telegraf gather stats for all bcache devices
-  ## Setting devices will restrict the stats to the specified
-  ## bcache devices.
-  bcacheDevs = ["bcache0"]
-`
-
-func (b *Bcache) SampleConfig() string {
-	return sampleConfig
-}
-
-func (b *Bcache) Description() string {
-	return "Read metrics of bcache from stats_total and dirty_data"
-}
-
 func getTags(bdev string) map[string]string {
+	//nolint:errcheck // unable to propagate
 	backingDevFile, _ := os.Readlink(bdev)
 	backingDevPath := strings.Split(backingDevFile, "/")
 	backingDev := backingDevPath[len(backingDevPath)-2]
 
+	//nolint:errcheck // unable to propagate
 	bcacheDevFile, _ := os.Readlink(bdev + "/dev")
 	bcacheDevPath := strings.Split(bcacheDevFile, "/")
 	bcacheDev := bcacheDevPath[len(bcacheDevPath)-1]
@@ -64,6 +54,7 @@ func prettyToBytes(v string) uint64 {
 		v = v[:len(v)-1]
 		factor = factors[prefix]
 	}
+	//nolint:errcheck // unable to propagate
 	result, _ := strconv.ParseFloat(v, 32)
 	result = result * float64(factor)
 
@@ -79,7 +70,7 @@ func (b *Bcache) gatherBcache(bdev string, acc telegraf.Accumulator) error {
 	if len(metrics) == 0 {
 		return errors.New("can't read any stats file")
 	}
-	file, err := ioutil.ReadFile(bdev + "/dirty_data")
+	file, err := os.ReadFile(bdev + "/dirty_data")
 	if err != nil {
 		return err
 	}
@@ -91,7 +82,7 @@ func (b *Bcache) gatherBcache(bdev string, acc telegraf.Accumulator) error {
 
 	for _, path := range metrics {
 		key := filepath.Base(path)
-		file, err := ioutil.ReadFile(path)
+		file, err := os.ReadFile(path)
 		rawValue := strings.TrimSpace(string(file))
 		if err != nil {
 			return err
@@ -100,12 +91,19 @@ func (b *Bcache) gatherBcache(bdev string, acc telegraf.Accumulator) error {
 			value := prettyToBytes(rawValue)
 			fields[key] = value
 		} else {
-			value, _ := strconv.ParseUint(rawValue, 10, 64)
+			value, err := strconv.ParseUint(rawValue, 10, 64)
+			if err != nil {
+				return err
+			}
 			fields[key] = value
 		}
 	}
 	acc.AddFields("bcache", fields, tags)
 	return nil
+}
+
+func (*Bcache) SampleConfig() string {
+	return sampleConfig
 }
 
 func (b *Bcache) Gather(acc telegraf.Accumulator) error {
@@ -122,9 +120,9 @@ func (b *Bcache) Gather(acc telegraf.Accumulator) error {
 	if len(bcachePath) == 0 {
 		bcachePath = "/sys/fs/bcache"
 	}
-	bdevs, _ := filepath.Glob(bcachePath + "/*/bdev*")
-	if len(bdevs) < 1 {
-		return errors.New("Can't find any bcache device")
+	bdevs, err := filepath.Glob(bcachePath + "/*/bdev*")
+	if len(bdevs) < 1 || err != nil {
+		return errors.New("can't find any bcache device")
 	}
 	for _, bdev := range bdevs {
 		if restrictDevs {
@@ -133,7 +131,9 @@ func (b *Bcache) Gather(acc telegraf.Accumulator) error {
 				continue
 			}
 		}
-		b.gatherBcache(bdev, acc)
+		if err := b.gatherBcache(bdev, acc); err != nil {
+			return fmt.Errorf("gathering bcache failed: %w", err)
+		}
 	}
 	return nil
 }

@@ -3,54 +3,96 @@ package kube_inventory
 import (
 	"context"
 
-	"github.com/ericchiang/k8s/apis/core/v1"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/influxdata/telegraf"
 )
 
 func collectNodes(ctx context.Context, acc telegraf.Accumulator, ki *KubernetesInventory) {
-	list, err := ki.client.getNodes(ctx)
+	list, err := ki.client.getNodes(ctx, ki.NodeName)
 	if err != nil {
 		acc.AddError(err)
 		return
 	}
-	for _, n := range list.Items {
-		if err = ki.gatherNode(*n, acc); err != nil {
-			acc.AddError(err)
-			return
-		}
+
+	ki.gatherNodeCount(len(list.Items), acc)
+
+	for i := range list.Items {
+		ki.gatherNode(&list.Items[i], acc)
 	}
 }
 
-func (ki *KubernetesInventory) gatherNode(n v1.Node, acc telegraf.Accumulator) error {
+func (ki *KubernetesInventory) gatherNodeCount(count int, acc telegraf.Accumulator) {
+	fields := map[string]interface{}{"node_count": count}
+	tags := map[string]string{}
+
+	acc.AddFields(nodeMeasurement, fields, tags)
+}
+
+func (ki *KubernetesInventory) gatherNode(n *corev1.Node, acc telegraf.Accumulator) {
 	fields := map[string]interface{}{}
 	tags := map[string]string{
-		"node_name": *n.Metadata.Name,
+		"node_name":         n.Name,
+		"cluster_namespace": n.Annotations["cluster.x-k8s.io/cluster-namespace"],
+		"version":           n.Status.NodeInfo.KubeletVersion,
 	}
 
 	for resourceName, val := range n.Status.Capacity {
 		switch resourceName {
 		case "cpu":
-			fields["capacity_cpu_cores"] = atoi(val.GetString_())
+			fields["capacity_cpu_cores"] = ki.convertQuantity(val.String(), 1)
+			fields["capacity_millicpu_cores"] = ki.convertQuantity(val.String(), 1000)
 		case "memory":
-			fields["capacity_memory_bytes"] = convertQuantity(val.GetString_(), 1)
+			fields["capacity_memory_bytes"] = ki.convertQuantity(val.String(), 1)
 		case "pods":
-			fields["capacity_pods"] = atoi(val.GetString_())
+			fields["capacity_pods"] = atoi(val.String())
 		}
 	}
 
 	for resourceName, val := range n.Status.Allocatable {
 		switch resourceName {
 		case "cpu":
-			fields["allocatable_cpu_cores"] = atoi(val.GetString_())
+			fields["allocatable_cpu_cores"] = ki.convertQuantity(val.String(), 1)
+			fields["allocatable_millicpu_cores"] = ki.convertQuantity(val.String(), 1000)
 		case "memory":
-			fields["allocatable_memory_bytes"] = convertQuantity(val.GetString_(), 1)
+			fields["allocatable_memory_bytes"] = ki.convertQuantity(val.String(), 1)
 		case "pods":
-			fields["allocatable_pods"] = atoi(val.GetString_())
+			fields["allocatable_pods"] = atoi(val.String())
 		}
 	}
 
-	acc.AddFields(nodeMeasurement, fields, tags)
+	for _, val := range n.Status.Conditions {
+		conditionfields := map[string]interface{}{}
+		conditiontags := map[string]string{
+			"status":    string(val.Status),
+			"condition": string(val.Type),
+		}
+		for k, v := range tags {
+			conditiontags[k] = v
+		}
+		running := 0
+		nodeready := 0
+		if val.Status == "True" {
+			if val.Type == "Ready" {
+				nodeready = 1
+			}
+			running = 1
+		} else if val.Status == "Unknown" {
+			if val.Type == "Ready" {
+				nodeready = 0
+			}
+			running = 2
+		}
+		conditionfields["status_condition"] = running
+		conditionfields["ready"] = nodeready
+		acc.AddFields(nodeMeasurement, conditionfields, conditiontags)
+	}
 
-	return nil
+	unschedulable := 0
+	if n.Spec.Unschedulable {
+		unschedulable = 1
+	}
+	fields["spec_unschedulable"] = unschedulable
+
+	acc.AddFields(nodeMeasurement, fields, tags)
 }

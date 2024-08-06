@@ -1,37 +1,35 @@
-// +build linux
-// +build 386 amd64 arm arm64
+//go:build linux && (386 || amd64 || arm || arm64)
 
 package ras
 
 import (
-	"fmt"
 	"testing"
 
-	"github.com/influxdata/telegraf/testutil"
+	"github.com/stretchr/testify/require"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/influxdata/telegraf/testutil"
 )
 
 func TestUpdateCounters(t *testing.T) {
 	ras := newRas()
-	for _, mce := range testData {
-		ras.updateCounters(&mce)
+	for i := range testData {
+		ras.updateCounters(&testData[i])
 	}
 
-	assert.Equal(t, 1, len(ras.cpuSocketCounters), "Should contain counters only for single socket")
+	require.Len(t, ras.cpuSocketCounters, 1, "Should contain counters only for single socket")
 
 	for metric, value := range ras.cpuSocketCounters[0] {
 		if metric == processorBase {
 			// processor_base_errors is sum of other seven errors: internal_timer_errors, smm_handler_code_access_violation_errors,
 			// internal_parity_errors, frc_errors, external_mce_errors, microcode_rom_parity_errors and unclassified_mce_errors
-			assert.Equal(t, int64(7), value, fmt.Sprintf("%s should have value of 7", processorBase))
+			require.Equal(t, int64(7), value, processorBase+" should have value of 7")
 		} else {
-			assert.Equal(t, int64(1), value, fmt.Sprintf("%s should have value of 1", metric))
+			require.Equal(t, int64(1), value, metric+" should have value of 1")
 		}
 	}
 
 	for metric, value := range ras.serverCounters {
-		assert.Equal(t, int64(1), value, fmt.Sprintf("%s should have value of 1", metric))
+		require.Equal(t, int64(1), value, metric+" should have value of 1")
 	}
 }
 
@@ -60,9 +58,9 @@ func TestUpdateLatestTimestamp(t *testing.T) {
 	}...)
 	for _, mce := range testData {
 		err := ras.updateLatestTimestamp(mce.Timestamp)
-		assert.NoError(t, err)
+		require.NoError(t, err)
 	}
-	assert.Equal(t, ts, ras.latestTimestamp.Format(dateLayout))
+	require.Equal(t, ts, ras.latestTimestamp.Format(dateLayout))
 }
 
 func TestMultipleSockets(t *testing.T) {
@@ -95,17 +93,17 @@ func TestMultipleSockets(t *testing.T) {
 			MciStatusMsg: overflow,
 		},
 	}
-	for _, mce := range testData {
-		ras.updateCounters(&mce)
+	for i := range testData {
+		ras.updateCounters(&testData[i])
 	}
-	assert.Equal(t, 4, len(ras.cpuSocketCounters), "Should contain counters for four sockets")
+	require.Len(t, ras.cpuSocketCounters, 4, "Should contain counters for four sockets")
 
 	for _, metricData := range ras.cpuSocketCounters {
 		for metric, value := range metricData {
 			if metric == levelTwoCache {
-				assert.Equal(t, int64(1), value, fmt.Sprintf("%s should have value of 1", levelTwoCache))
+				require.Equal(t, int64(1), value, levelTwoCache+" should have value of 1")
 			} else {
-				assert.Equal(t, int64(0), value, fmt.Sprintf("%s should have value of 0", metric))
+				require.Equal(t, int64(0), value, metric+" should have value of 0")
 			}
 		}
 	}
@@ -114,27 +112,28 @@ func TestMultipleSockets(t *testing.T) {
 func TestMissingDatabase(t *testing.T) {
 	var acc testutil.Accumulator
 	ras := newRas()
-	ras.DBPath = "/tmp/test.db"
+	ras.DBPath = "/nonexistent/ras.db"
 	err := ras.Start(&acc)
-	assert.Error(t, err)
+	require.Error(t, err)
 }
 
 func TestEmptyDatabase(t *testing.T) {
 	ras := newRas()
 
-	assert.Equal(t, 1, len(ras.cpuSocketCounters), "Should contain default counters for one socket")
-	assert.Equal(t, 2, len(ras.serverCounters), "Should contain default counters for server")
+	require.Len(t, ras.cpuSocketCounters, 1, "Should contain default counters for one socket")
+	require.Len(t, ras.serverCounters, 2, "Should contain default counters for server")
 
 	for metric, value := range ras.cpuSocketCounters[0] {
-		assert.Equal(t, int64(0), value, fmt.Sprintf("%s should have value of 0", metric))
+		require.Equal(t, int64(0), value, metric+" should have value of 0")
 	}
 
 	for metric, value := range ras.serverCounters {
-		assert.Equal(t, int64(0), value, fmt.Sprintf("%s should have value of 0", metric))
+		require.Equal(t, int64(0), value, metric+" should have value of 0")
 	}
 }
 
 func newRas() *Ras {
+	//nolint:errcheck // known timestamp
 	defaultTimestamp, _ := parseDate("1970-01-01 00:00:01 -0700")
 	return &Ras{
 		DBPath:          defaultDbPath,

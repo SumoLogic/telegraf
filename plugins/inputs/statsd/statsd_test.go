@@ -2,15 +2,15 @@ package statsd
 
 import (
 	"fmt"
-	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/internal"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"net"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/testutil"
 )
 
@@ -20,7 +20,10 @@ const (
 )
 
 func NewTestStatsd() *Statsd {
-	s := Statsd{Log: testutil.Logger{}}
+	s := Statsd{
+		Log:                 testutil.Logger{},
+		NumberWorkerThreads: 5,
+	}
 
 	// Make data structures
 	s.done = make(chan struct{})
@@ -29,6 +32,7 @@ func NewTestStatsd() *Statsd {
 	s.counters = make(map[string]cachedcounter)
 	s.sets = make(map[string]cachedset)
 	s.timings = make(map[string]cachedtimings)
+	s.distributions = make([]cacheddistributions, 0)
 
 	s.MetricSeparator = "_"
 
@@ -43,6 +47,7 @@ func TestConcurrentConns(t *testing.T) {
 		ServiceAddress:         "localhost:8125",
 		AllowedPendingMessages: 10000,
 		MaxTCPConnections:      2,
+		NumberWorkerThreads:    5,
 	}
 
 	acc := &testutil.Accumulator{}
@@ -51,19 +56,19 @@ func TestConcurrentConns(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 250)
 	_, err := net.Dial("tcp", "127.0.0.1:8125")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	_, err = net.Dial("tcp", "127.0.0.1:8125")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Connection over the limit:
 	conn, err := net.Dial("tcp", "127.0.0.1:8125")
-	assert.NoError(t, err)
-	net.Dial("tcp", "127.0.0.1:8125")
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	_, err = net.Dial("tcp", "127.0.0.1:8125")
+	require.NoError(t, err)
 	_, err = conn.Write([]byte(testMsg))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	time.Sleep(time.Millisecond * 100)
-	assert.Zero(t, acc.NFields())
+	require.Zero(t, acc.NFields())
 }
 
 // Test that MaxTCPConnections is respected when max==1
@@ -74,6 +79,7 @@ func TestConcurrentConns1(t *testing.T) {
 		ServiceAddress:         "localhost:8125",
 		AllowedPendingMessages: 10000,
 		MaxTCPConnections:      1,
+		NumberWorkerThreads:    5,
 	}
 
 	acc := &testutil.Accumulator{}
@@ -82,17 +88,17 @@ func TestConcurrentConns1(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 250)
 	_, err := net.Dial("tcp", "127.0.0.1:8125")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	// Connection over the limit:
 	conn, err := net.Dial("tcp", "127.0.0.1:8125")
-	assert.NoError(t, err)
-	net.Dial("tcp", "127.0.0.1:8125")
-	assert.NoError(t, err)
+	require.NoError(t, err)
+	_, err = net.Dial("tcp", "127.0.0.1:8125")
+	require.NoError(t, err)
 	_, err = conn.Write([]byte(testMsg))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	time.Sleep(time.Millisecond * 100)
-	assert.Zero(t, acc.NFields())
+	require.Zero(t, acc.NFields())
 }
 
 // Test that MaxTCPConnections is respected
@@ -103,6 +109,7 @@ func TestCloseConcurrentConns(t *testing.T) {
 		ServiceAddress:         "localhost:8125",
 		AllowedPendingMessages: 10000,
 		MaxTCPConnections:      2,
+		NumberWorkerThreads:    5,
 	}
 
 	acc := &testutil.Accumulator{}
@@ -110,11 +117,32 @@ func TestCloseConcurrentConns(t *testing.T) {
 
 	time.Sleep(time.Millisecond * 250)
 	_, err := net.Dial("tcp", "127.0.0.1:8125")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	_, err = net.Dial("tcp", "127.0.0.1:8125")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	listener.Stop()
+}
+
+// benchmark how long it takes to parse metrics:
+func BenchmarkParser(b *testing.B) {
+	plugin := Statsd{
+		Log:                    testutil.Logger{},
+		Protocol:               "udp",
+		ServiceAddress:         "localhost:8125",
+		AllowedPendingMessages: 250000,
+		NumberWorkerThreads:    5,
+	}
+	acc := &testutil.Accumulator{Discard: true}
+
+	require.NoError(b, plugin.Start(acc))
+
+	// send multiple messages to socket
+	for n := 0; n < b.N; n++ {
+		require.NoError(b, plugin.parseStatsdLine(testMsg))
+	}
+
+	plugin.Stop()
 }
 
 // benchmark how long it takes to accept & process 100,000 metrics:
@@ -124,21 +152,17 @@ func BenchmarkUDP(b *testing.B) {
 		Protocol:               "udp",
 		ServiceAddress:         "localhost:8125",
 		AllowedPendingMessages: 250000,
+		NumberWorkerThreads:    5,
 	}
 	acc := &testutil.Accumulator{Discard: true}
 
 	// send multiple messages to socket
 	for n := 0; n < b.N; n++ {
-		err := listener.Start(acc)
-		if err != nil {
-			panic(err)
-		}
+		require.NoError(b, listener.Start(acc))
 
 		time.Sleep(time.Millisecond * 250)
 		conn, err := net.Dial("udp", "127.0.0.1:8125")
-		if err != nil {
-			panic(err)
-		}
+		require.NoError(b, err)
 
 		var wg sync.WaitGroup
 		for i := 1; i <= producerThreads; i++ {
@@ -149,17 +173,127 @@ func BenchmarkUDP(b *testing.B) {
 
 		// wait for 250,000 metrics to get added to accumulator
 		for len(listener.in) > 0 {
-			fmt.Printf("Left in buffer: %v \n", len(listener.in))
 			time.Sleep(time.Millisecond)
 		}
 		listener.Stop()
 	}
 }
 
+func BenchmarkUDPThreads4(b *testing.B) {
+	listener := Statsd{
+		Log:                    testutil.Logger{},
+		Protocol:               "udp",
+		ServiceAddress:         "localhost:8125",
+		AllowedPendingMessages: 250000,
+		NumberWorkerThreads:    4,
+	}
+
+	acc := &testutil.Accumulator{Discard: true}
+	require.NoError(b, listener.Start(acc))
+
+	time.Sleep(time.Millisecond * 250)
+	conn, err := net.Dial("udp", "127.0.0.1:8125")
+	require.NoError(b, err)
+	defer conn.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < b.N; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				_, err := conn.Write([]byte(testMsg))
+				require.NoError(b, err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	// wait for 250,000 metrics to get added to accumulator
+	for len(listener.in) > 0 {
+		time.Sleep(time.Millisecond)
+	}
+	listener.Stop()
+}
+
+func BenchmarkUDPThreads8(b *testing.B) {
+	listener := Statsd{
+		Log:                    testutil.Logger{},
+		Protocol:               "udp",
+		ServiceAddress:         "localhost:8125",
+		AllowedPendingMessages: 250000,
+		NumberWorkerThreads:    8,
+	}
+
+	acc := &testutil.Accumulator{Discard: true}
+	require.NoError(b, listener.Start(acc))
+
+	time.Sleep(time.Millisecond * 250)
+	conn, err := net.Dial("udp", "127.0.0.1:8125")
+	require.NoError(b, err)
+	defer conn.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < b.N; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				_, err := conn.Write([]byte(testMsg))
+				require.NoError(b, err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	// wait for 250,000 metrics to get added to accumulator
+	for len(listener.in) > 0 {
+		time.Sleep(time.Millisecond)
+	}
+	listener.Stop()
+}
+
+func BenchmarkUDPThreads16(b *testing.B) {
+	listener := Statsd{
+		Log:                    testutil.Logger{},
+		Protocol:               "udp",
+		ServiceAddress:         "localhost:8125",
+		AllowedPendingMessages: 250000,
+		NumberWorkerThreads:    16,
+	}
+
+	acc := &testutil.Accumulator{Discard: true}
+	require.NoError(b, listener.Start(acc))
+
+	time.Sleep(time.Millisecond * 250)
+	conn, err := net.Dial("udp", "127.0.0.1:8125")
+	require.NoError(b, err)
+	defer conn.Close()
+
+	var wg sync.WaitGroup
+	for i := 0; i < b.N; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 1000; i++ {
+				_, err := conn.Write([]byte(testMsg))
+				require.NoError(b, err)
+			}
+		}()
+	}
+	wg.Wait()
+
+	// wait for 250,000 metrics to get added to accumulator
+	for len(listener.in) > 0 {
+		time.Sleep(time.Millisecond)
+	}
+	listener.Stop()
+}
+
 func sendRequests(conn net.Conn, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for i := 0; i < 25000; i++ {
-		fmt.Fprintf(conn, testMsg)
+		fmt.Fprint(conn, testMsg)
 	}
 }
 
@@ -171,21 +305,18 @@ func BenchmarkTCP(b *testing.B) {
 		ServiceAddress:         "localhost:8125",
 		AllowedPendingMessages: 250000,
 		MaxTCPConnections:      250,
+		NumberWorkerThreads:    5,
 	}
 	acc := &testutil.Accumulator{Discard: true}
 
 	// send multiple messages to socket
 	for n := 0; n < b.N; n++ {
-		err := listener.Start(acc)
-		if err != nil {
-			panic(err)
-		}
+		require.NoError(b, listener.Start(acc))
 
 		time.Sleep(time.Millisecond * 250)
 		conn, err := net.Dial("tcp", "127.0.0.1:8125")
-		if err != nil {
-			panic(err)
-		}
+		require.NoError(b, err)
+
 		var wg sync.WaitGroup
 		for i := 1; i <= producerThreads; i++ {
 			wg.Add(1)
@@ -212,10 +343,7 @@ func TestParse_ValidLines(t *testing.T) {
 	}
 
 	for _, line := range validLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoError(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 }
 
@@ -243,10 +371,7 @@ func TestParse_Gauges(t *testing.T) {
 	}
 
 	for _, line := range validLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
 	validations := []struct {
@@ -288,10 +413,7 @@ func TestParse_Gauges(t *testing.T) {
 	}
 
 	for _, test := range validations {
-		err := testValidateGauge(test.name, test.value, s.gauges)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateGauge(test.name, test.value, s.gauges))
 	}
 }
 
@@ -321,10 +443,7 @@ func TestParse_Sets(t *testing.T) {
 	}
 
 	for _, line := range validLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
 	validations := []struct {
@@ -350,10 +469,7 @@ func TestParse_Sets(t *testing.T) {
 	}
 
 	for _, test := range validations {
-		err := testValidateSet(test.name, test.value, s.sets)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateSet(test.name, test.value, s.sets))
 	}
 }
 
@@ -378,10 +494,7 @@ func TestParse_Counters(t *testing.T) {
 	}
 
 	for _, line := range validLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
 	validations := []struct {
@@ -415,20 +528,126 @@ func TestParse_Counters(t *testing.T) {
 	}
 
 	for _, test := range validations {
-		err := testValidateCounter(test.name, test.value, s.counters)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateCounter(test.name, test.value, s.counters))
 	}
+}
+
+func TestParse_CountersAsFloat(t *testing.T) {
+	s := NewTestStatsd()
+	s.FloatCounters = true
+
+	// Test that counters work
+	validLines := []string{
+		"small.inc:1|c",
+		"big.inc:100|c",
+		"big.inc:1|c",
+		"big.inc:100000|c",
+		"big.inc:1000000|c",
+		"small.inc:1|c",
+		"zero.init:0|c",
+		"sample.rate:1|c|@0.1",
+		"sample.rate:1|c",
+		"scientific.notation:4.696E+5|c",
+		"negative.test:100|c",
+		"negative.test:-5|c",
+	}
+
+	for _, line := range validLines {
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
+	}
+
+	validations := []struct {
+		name  string
+		value int64
+	}{
+		{
+			"scientific_notation",
+			469600,
+		},
+		{
+			"small_inc",
+			2,
+		},
+		{
+			"big_inc",
+			1100101,
+		},
+		{
+			"zero_init",
+			0,
+		},
+		{
+			"sample_rate",
+			11,
+		},
+		{
+			"negative_test",
+			95,
+		},
+	}
+	for _, test := range validations {
+		require.NoError(t, testValidateCounter(test.name, test.value, s.counters))
+	}
+
+	expected := []telegraf.Metric{
+		testutil.MustMetric(
+			"small_inc",
+			map[string]string{"metric_type": "counter"},
+			map[string]interface{}{"value": 2.0},
+			time.Now(),
+			telegraf.Counter,
+		),
+		testutil.MustMetric(
+			"big_inc",
+			map[string]string{"metric_type": "counter"},
+			map[string]interface{}{"value": 1100101.0},
+			time.Now(),
+			telegraf.Counter,
+		),
+		testutil.MustMetric(
+			"zero_init",
+			map[string]string{"metric_type": "counter"},
+			map[string]interface{}{"value": 0.0},
+			time.Now(),
+			telegraf.Counter,
+		),
+		testutil.MustMetric(
+			"sample_rate",
+			map[string]string{"metric_type": "counter"},
+			map[string]interface{}{"value": 11.0},
+			time.Now(),
+			telegraf.Counter,
+		),
+		testutil.MustMetric(
+			"scientific_notation",
+			map[string]string{"metric_type": "counter"},
+			map[string]interface{}{"value": 469600.0},
+			time.Now(),
+			telegraf.Counter,
+		),
+		testutil.MustMetric(
+			"negative_test",
+			map[string]string{"metric_type": "counter"},
+			map[string]interface{}{"value": 95.0},
+			time.Now(),
+			telegraf.Counter,
+		),
+	}
+
+	acc := &testutil.Accumulator{}
+	require.NoError(t, s.Gather(acc))
+	metrics := acc.GetTelegrafMetrics()
+	testutil.PrintMetrics(metrics)
+	testutil.RequireMetricsEqual(t, expected, metrics, testutil.IgnoreTime(), testutil.SortMetrics())
 }
 
 // Tests low-level functionality of timings
 func TestParse_Timings(t *testing.T) {
 	s := NewTestStatsd()
-	s.Percentiles = []internal.Number{{Value: 90.0}}
+	s.Percentiles = []Number{90.0}
 	acc := &testutil.Accumulator{}
 
-	// Test that counters work
+	// Test that timings work
 	validLines := []string{
 		"test.timing:1|ms",
 		"test.timing:11|ms",
@@ -438,25 +657,77 @@ func TestParse_Timings(t *testing.T) {
 	}
 
 	for _, line := range validLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
-	s.Gather(acc)
+	require.NoError(t, s.Gather(acc))
 
 	valid := map[string]interface{}{
 		"90_percentile": float64(11),
 		"count":         int64(5),
 		"lower":         float64(1),
 		"mean":          float64(3),
+		"median":        float64(1),
 		"stddev":        float64(4),
 		"sum":           float64(15),
 		"upper":         float64(11),
 	}
 
 	acc.AssertContainsFields(t, "test_timing", valid)
+}
+
+// Tests low-level functionality of distributions
+func TestParse_Distributions(t *testing.T) {
+	s := NewTestStatsd()
+	acc := &testutil.Accumulator{}
+
+	parseMetrics := func() {
+		// Test that distributions work
+		validLines := []string{
+			"test.distribution:1|d",
+			"test.distribution2:2|d",
+			"test.distribution3:3|d",
+			"test.distribution4:1|d",
+			"test.distribution5:1|d",
+		}
+
+		for _, line := range validLines {
+			require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
+		}
+
+		require.NoError(t, s.Gather(acc))
+	}
+
+	validMeasurementMap := map[string]float64{
+		"test_distribution":  1,
+		"test_distribution2": 2,
+		"test_distribution3": 3,
+		"test_distribution4": 1,
+		"test_distribution5": 1,
+	}
+
+	// Test parsing when DataDogExtensions and DataDogDistributions aren't enabled
+	parseMetrics()
+	for key := range validMeasurementMap {
+		acc.AssertDoesNotContainMeasurement(t, key)
+	}
+
+	// Test parsing when DataDogDistributions is enabled but not DataDogExtensions
+	s.DataDogDistributions = true
+	parseMetrics()
+	for key := range validMeasurementMap {
+		acc.AssertDoesNotContainMeasurement(t, key)
+	}
+
+	// Test parsing when DataDogExtensions and DataDogDistributions are enabled
+	s.DataDogExtensions = true
+	parseMetrics()
+	for key, value := range validMeasurementMap {
+		field := map[string]interface{}{
+			"value": value,
+		}
+		acc.AssertContainsFields(t, key, field)
+	}
 }
 
 func TestParseScientificNotation(t *testing.T) {
@@ -468,10 +739,7 @@ func TestParseScientificNotation(t *testing.T) {
 		"scientific.notation:4.6968460083008E-5|h",
 	}
 	for _, line := range sciNotationLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line [%s] should not have resulted in error: %s\n", line, err)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line [%s] should not have resulted in error", line)
 	}
 }
 
@@ -490,10 +758,7 @@ func TestParse_InvalidLines(t *testing.T) {
 		"invalid.value:1d1|c",
 	}
 	for _, line := range invalidLines {
-		err := s.parseStatsdLine(line)
-		if err == nil {
-			t.Errorf("Parsing line %s should have resulted in an error\n", line)
-		}
+		require.Errorf(t, s.parseStatsdLine(line), "Parsing line %s should have resulted in an error", line)
 	}
 }
 
@@ -508,10 +773,7 @@ func TestParse_InvalidSampleRate(t *testing.T) {
 	}
 
 	for _, line := range invalidLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
 	counterValidations := []struct {
@@ -532,21 +794,12 @@ func TestParse_InvalidSampleRate(t *testing.T) {
 	}
 
 	for _, test := range counterValidations {
-		err := testValidateCounter(test.name, test.value, test.cache)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateCounter(test.name, test.value, test.cache))
 	}
 
-	err := testValidateGauge("invalid_sample_rate", 45, s.gauges)
-	if err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateGauge("invalid_sample_rate", 45, s.gauges))
 
-	err = testValidateSet("invalid_sample_rate", 1, s.sets)
-	if err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateSet("invalid_sample_rate", 1, s.sets))
 }
 
 // Names should be parsed like . -> _
@@ -558,10 +811,7 @@ func TestParse_DefaultNameParsing(t *testing.T) {
 	}
 
 	for _, line := range validLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
 	validations := []struct {
@@ -579,10 +829,7 @@ func TestParse_DefaultNameParsing(t *testing.T) {
 	}
 
 	for _, test := range validations {
-		err := testValidateCounter(test.name, test.value, s.counters)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateCounter(test.name, test.value, s.counters))
 	}
 }
 
@@ -599,10 +846,7 @@ func TestParse_Template(t *testing.T) {
 	}
 
 	for _, line := range lines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
 	validations := []struct {
@@ -621,10 +865,7 @@ func TestParse_Template(t *testing.T) {
 
 	// Validate counters
 	for _, test := range validations {
-		err := testValidateCounter(test.name, test.value, s.counters)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateCounter(test.name, test.value, s.counters))
 	}
 }
 
@@ -641,10 +882,7 @@ func TestParse_TemplateFilter(t *testing.T) {
 	}
 
 	for _, line := range lines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
 	validations := []struct {
@@ -663,10 +901,7 @@ func TestParse_TemplateFilter(t *testing.T) {
 
 	// Validate counters
 	for _, test := range validations {
-		err := testValidateCounter(test.name, test.value, s.counters)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateCounter(test.name, test.value, s.counters))
 	}
 }
 
@@ -683,10 +918,7 @@ func TestParse_TemplateSpecificity(t *testing.T) {
 	}
 
 	for _, line := range lines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
 	validations := []struct {
@@ -701,10 +933,7 @@ func TestParse_TemplateSpecificity(t *testing.T) {
 
 	// Validate counters
 	for _, test := range validations {
-		err := testValidateCounter(test.name, test.value, s.counters)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateCounter(test.name, test.value, s.counters))
 	}
 }
 
@@ -731,10 +960,7 @@ func TestParse_TemplateFields(t *testing.T) {
 	}
 
 	for _, line := range lines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
 	counterTests := []struct {
@@ -760,10 +986,7 @@ func TestParse_TemplateFields(t *testing.T) {
 	}
 	// Validate counters
 	for _, test := range counterTests {
-		err := testValidateCounter(test.name, test.value, s.counters, test.field)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateCounter(test.name, test.value, s.counters, test.field))
 	}
 
 	gaugeTests := []struct {
@@ -784,10 +1007,7 @@ func TestParse_TemplateFields(t *testing.T) {
 	}
 	// Validate gauges
 	for _, test := range gaugeTests {
-		err := testValidateGauge(test.name, test.value, s.gauges, test.field)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateGauge(test.name, test.value, s.gauges, test.field))
 	}
 
 	setTests := []struct {
@@ -808,10 +1028,7 @@ func TestParse_TemplateFields(t *testing.T) {
 	}
 	// Validate sets
 	for _, test := range setTests {
-		err := testValidateSet(test.name, test.value, s.sets, test.field)
-		if err != nil {
-			t.Error(err.Error())
-		}
+		require.NoError(t, testValidateSet(test.name, test.value, s.sets, test.field))
 	}
 }
 
@@ -859,18 +1076,12 @@ func TestParse_Tags(t *testing.T) {
 
 	for _, test := range tests {
 		name, _, tags := s.parseName(test.bucket)
-		if name != test.name {
-			t.Errorf("Expected: %s, got %s", test.name, name)
-		}
+		require.Equalf(t, name, test.name, "Expected: %s, got %s", test.name, name)
 
 		for k, v := range test.tags {
 			actual, ok := tags[k]
-			if !ok {
-				t.Errorf("Expected key: %s not found", k)
-			}
-			if actual != v {
-				t.Errorf("Expected %s, got %s", v, actual)
-			}
+			require.Truef(t, ok, "Expected key: %s not found", k)
+			require.Equalf(t, actual, v, "Expected %s, got %s", v, actual)
 		}
 	}
 }
@@ -951,6 +1162,7 @@ func TestParse_DataDogTags(t *testing.T) {
 						"count":  10,
 						"lower":  float64(3),
 						"mean":   float64(3),
+						"median": float64(3),
 						"stddev": float64(0),
 						"sum":    float64(30),
 						"upper":  float64(3),
@@ -985,10 +1197,159 @@ func TestParse_DataDogTags(t *testing.T) {
 			s := NewTestStatsd()
 			s.DataDogExtensions = true
 
-			err := s.parseStatsdLine(tt.line)
-			require.NoError(t, err)
-			err = s.Gather(&acc)
-			require.NoError(t, err)
+			require.NoError(t, s.parseStatsdLine(tt.line))
+			require.NoError(t, s.Gather(&acc))
+
+			testutil.RequireMetricsEqual(t, tt.expected, acc.GetTelegrafMetrics(),
+				testutil.SortMetrics(), testutil.IgnoreTime())
+		})
+	}
+}
+
+func TestParse_DataDogContainerID(t *testing.T) {
+	tests := []struct {
+		name     string
+		line     string
+		keep     bool
+		expected []telegraf.Metric
+	}{
+		{
+			name: "counter",
+			line: "my_counter:1|c|#host:localhost,endpoint:/:tenant?/oauth/ro|c:f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+			keep: true,
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"my_counter",
+					map[string]string{
+						"endpoint":    "/:tenant?/oauth/ro",
+						"host":        "localhost",
+						"metric_type": "counter",
+						"container":   "f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+					},
+					map[string]interface{}{
+						"value": 1,
+					},
+					time.Now(),
+					telegraf.Counter,
+				),
+			},
+		},
+		{
+			name: "gauge",
+			line: "my_gauge:10.1|g|#live|c:f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+			keep: true,
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"my_gauge",
+					map[string]string{
+						"live":        "true",
+						"metric_type": "gauge",
+						"container":   "f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+					},
+					map[string]interface{}{
+						"value": 10.1,
+					},
+					time.Now(),
+					telegraf.Gauge,
+				),
+			},
+		},
+		{
+			name: "set",
+			line: "my_set:1|s|#host:localhost|c:f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+			keep: true,
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"my_set",
+					map[string]string{
+						"host":        "localhost",
+						"metric_type": "set",
+						"container":   "f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+					},
+					map[string]interface{}{
+						"value": 1,
+					},
+					time.Now(),
+				),
+			},
+		},
+		{
+			name: "timer",
+			line: "my_timer:3|ms|@0.1|#live,host:localhost|c:f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+			keep: true,
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"my_timer",
+					map[string]string{
+						"host":        "localhost",
+						"live":        "true",
+						"metric_type": "timing",
+						"container":   "f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+					},
+					map[string]interface{}{
+						"count":  10,
+						"lower":  float64(3),
+						"mean":   float64(3),
+						"median": float64(3),
+						"stddev": float64(0),
+						"sum":    float64(30),
+						"upper":  float64(3),
+					},
+					time.Now(),
+				),
+			},
+		},
+		{
+			name: "empty tag set",
+			line: "cpu:42|c|#|c:f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+			keep: true,
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"cpu",
+					map[string]string{
+						"metric_type": "counter",
+						"container":   "f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+					},
+					map[string]interface{}{
+						"value": 42,
+					},
+					time.Now(),
+					telegraf.Counter,
+				),
+			},
+		},
+		{
+			name: "drop it",
+			line: "cpu:42|c|#live,host:localhost|c:f76b5a1c03caa192580874b253c158010ade668cf03080a57aa8283919d56e75",
+			keep: false,
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"cpu",
+					map[string]string{
+						"host":        "localhost",
+						"live":        "true",
+						"metric_type": "counter",
+					},
+					map[string]interface{}{
+						"value": 42,
+					},
+					time.Now(),
+					telegraf.Counter,
+				),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var acc testutil.Accumulator
+
+			s := NewTestStatsd()
+			s.DataDogExtensions = true
+			s.DataDogKeepContainerTag = tt.keep
+
+			require.NoError(t, s.parseStatsdLine(tt.line))
+			require.NoError(t, s.Gather(&acc))
 
 			testutil.RequireMetricsEqual(t, tt.expected, acc.GetTelegrafMetrics(),
 				testutil.SortMetrics(), testutil.IgnoreTime())
@@ -1020,9 +1381,7 @@ func TestParseName(t *testing.T) {
 
 	for _, test := range tests {
 		name, _, _ := s.parseName(test.inName)
-		if name != test.outName {
-			t.Errorf("Expected: %s, got %s", test.outName, name)
-		}
+		require.Equalf(t, name, test.outName, "Expected: %s, got %s", test.outName, name)
 	}
 
 	// Test with separator == "."
@@ -1048,9 +1407,7 @@ func TestParseName(t *testing.T) {
 
 	for _, test := range tests {
 		name, _, _ := s.parseName(test.inName)
-		if name != test.outName {
-			t.Errorf("Expected: %s, got %s", test.outName, name)
-		}
+		require.Equalf(t, name, test.outName, "Expected: %s, got %s", test.outName, name)
 	}
 }
 
@@ -1066,15 +1423,72 @@ func TestParse_MeasurementsWithSameName(t *testing.T) {
 	}
 
 	for _, line := range validLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
-	if len(s.counters) != 2 {
-		t.Errorf("Expected 2 separate measurements, found %d", len(s.counters))
-	}
+	require.Lenf(t, s.counters, 2, "Expected 2 separate measurements, found %d", len(s.counters))
+}
+
+// Test that the metric caches expire (clear) an entry after the entry hasn't been updated for the configurable MaxTTL duration.
+func TestCachesExpireAfterMaxTTL(t *testing.T) {
+	s := NewTestStatsd()
+	s.MaxTTL = config.Duration(10 * time.Millisecond)
+
+	acc := &testutil.Accumulator{}
+	require.NoError(t, s.parseStatsdLine("valid:45|c"))
+	require.NoError(t, s.parseStatsdLine("valid:45|c"))
+	require.NoError(t, s.Gather(acc))
+
+	// Max TTL goes by, our 'valid' entry is cleared.
+	time.Sleep(100 * time.Millisecond)
+	require.NoError(t, s.Gather(acc))
+
+	// Now when we gather, we should have a counter that is reset to zero.
+	require.NoError(t, s.parseStatsdLine("valid:45|c"))
+	require.NoError(t, s.Gather(acc))
+
+	// Wait for the metrics to arrive
+	acc.Wait(3)
+
+	testutil.RequireMetricsEqual(t,
+		[]telegraf.Metric{
+			testutil.MustMetric(
+				"valid",
+				map[string]string{
+					"metric_type": "counter",
+				},
+				map[string]interface{}{
+					"value": 90,
+				},
+				time.Now(),
+				telegraf.Counter,
+			),
+			testutil.MustMetric(
+				"valid",
+				map[string]string{
+					"metric_type": "counter",
+				},
+				map[string]interface{}{
+					"value": 90,
+				},
+				time.Now(),
+				telegraf.Counter,
+			),
+			testutil.MustMetric(
+				"valid",
+				map[string]string{
+					"metric_type": "counter",
+				},
+				map[string]interface{}{
+					"value": 45,
+				},
+				time.Now(),
+				telegraf.Counter,
+			),
+		},
+		acc.GetTelegrafMetrics(),
+		testutil.IgnoreTime(),
+	)
 }
 
 // Test that measurements with multiple bits, are treated as different outputs
@@ -1119,92 +1533,52 @@ func TestParse_MeasurementsWithMultipleValues(t *testing.T) {
 	sMultiple := NewTestStatsd()
 
 	for _, line := range singleLines {
-		err := sSingle.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, sSingle.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
 	for _, line := range multipleLines {
-		err := sMultiple.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, sMultiple.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
 
-	if len(sSingle.timings) != 3 {
-		t.Errorf("Expected 3 measurement, found %d", len(sSingle.timings))
-	}
+	require.Lenf(t, sSingle.timings, 3, "Expected 3 measurement, found %d", len(sSingle.timings))
 
-	if cachedtiming, ok := sSingle.timings["metric_type=timingvalid_multiple"]; !ok {
-		t.Errorf("Expected cached measurement with hash 'metric_type=timingvalid_multiple' not found")
-	} else {
-		if cachedtiming.name != "valid_multiple" {
-			t.Errorf("Expected the name to be 'valid_multiple', got %s", cachedtiming.name)
-		}
+	cachedtiming, ok := sSingle.timings["metric_type=timingvalid_multiple"]
+	require.Truef(t, ok, "Expected cached measurement with hash 'metric_type=timingvalid_multiple' not found")
+	require.Equalf(t, "valid_multiple", cachedtiming.name, "Expected the name to be 'valid_multiple', got %s", cachedtiming.name)
 
-		// A 0 at samplerate 0.1 will add 10 values of 0,
-		// A 0 with invalid samplerate will add a single 0,
-		// plus the last bit of value 1
-		// which adds up to 12 individual datapoints to be cached
-		if cachedtiming.fields[defaultFieldName].n != 12 {
-			t.Errorf("Expected 12 additions, got %d", cachedtiming.fields[defaultFieldName].n)
-		}
+	// A 0 at samplerate 0.1 will add 10 values of 0,
+	// A 0 with invalid samplerate will add a single 0,
+	// plus the last bit of value 1
+	// which adds up to 12 individual datapoints to be cached
+	require.EqualValuesf(t, 12, cachedtiming.fields[defaultFieldName].n, "Expected 12 additions, got %d", cachedtiming.fields[defaultFieldName].n)
 
-		if cachedtiming.fields[defaultFieldName].upper != 1 {
-			t.Errorf("Expected max input to be 1, got %f", cachedtiming.fields[defaultFieldName].upper)
-		}
-	}
+	require.InDelta(t, 1, cachedtiming.fields[defaultFieldName].upper, testutil.DefaultDelta)
 
 	// test if sSingle and sMultiple did compute the same stats for valid.multiple.duplicate
-	if err := testValidateSet("valid_multiple_duplicate", 2, sSingle.sets); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateSet("valid_multiple_duplicate", 2, sSingle.sets))
 
-	if err := testValidateSet("valid_multiple_duplicate", 2, sMultiple.sets); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateSet("valid_multiple_duplicate", 2, sMultiple.sets))
 
-	if err := testValidateCounter("valid_multiple_duplicate", 5, sSingle.counters); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateCounter("valid_multiple_duplicate", 5, sSingle.counters))
 
-	if err := testValidateCounter("valid_multiple_duplicate", 5, sMultiple.counters); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateCounter("valid_multiple_duplicate", 5, sMultiple.counters))
 
-	if err := testValidateGauge("valid_multiple_duplicate", 1, sSingle.gauges); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateGauge("valid_multiple_duplicate", 1, sSingle.gauges))
 
-	if err := testValidateGauge("valid_multiple_duplicate", 1, sMultiple.gauges); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateGauge("valid_multiple_duplicate", 1, sMultiple.gauges))
 
 	// test if sSingle and sMultiple did compute the same stats for valid.multiple.mixed
-	if err := testValidateSet("valid_multiple_mixed", 1, sSingle.sets); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateSet("valid_multiple_mixed", 1, sSingle.sets))
 
-	if err := testValidateSet("valid_multiple_mixed", 1, sMultiple.sets); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateSet("valid_multiple_mixed", 1, sMultiple.sets))
 
-	if err := testValidateCounter("valid_multiple_mixed", 1, sSingle.counters); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateCounter("valid_multiple_mixed", 1, sSingle.counters))
 
-	if err := testValidateCounter("valid_multiple_mixed", 1, sMultiple.counters); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateCounter("valid_multiple_mixed", 1, sMultiple.counters))
 
-	if err := testValidateGauge("valid_multiple_mixed", 1, sSingle.gauges); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateGauge("valid_multiple_mixed", 1, sSingle.gauges))
 
-	if err := testValidateGauge("valid_multiple_mixed", 1, sMultiple.gauges); err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateGauge("valid_multiple_mixed", 1, sMultiple.gauges))
 }
 
 // Tests low-level functionality of timings when multiple fields is enabled
@@ -1212,7 +1586,7 @@ func TestParse_MeasurementsWithMultipleValues(t *testing.T) {
 func TestParse_TimingsMultipleFieldsWithTemplate(t *testing.T) {
 	s := NewTestStatsd()
 	s.Templates = []string{"measurement.field"}
-	s.Percentiles = []internal.Number{{Value: 90.0}}
+	s.Percentiles = []Number{90.0}
 	acc := &testutil.Accumulator{}
 
 	validLines := []string{
@@ -1229,18 +1603,16 @@ func TestParse_TimingsMultipleFieldsWithTemplate(t *testing.T) {
 	}
 
 	for _, line := range validLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
-	s.Gather(acc)
+	require.NoError(t, s.Gather(acc))
 
 	valid := map[string]interface{}{
 		"success_90_percentile": float64(11),
 		"success_count":         int64(5),
 		"success_lower":         float64(1),
 		"success_mean":          float64(3),
+		"success_median":        float64(1),
 		"success_stddev":        float64(4),
 		"success_sum":           float64(15),
 		"success_upper":         float64(11),
@@ -1249,6 +1621,7 @@ func TestParse_TimingsMultipleFieldsWithTemplate(t *testing.T) {
 		"error_count":         int64(5),
 		"error_lower":         float64(2),
 		"error_mean":          float64(6),
+		"error_median":        float64(2),
 		"error_stddev":        float64(8),
 		"error_sum":           float64(30),
 		"error_upper":         float64(22),
@@ -1263,7 +1636,7 @@ func TestParse_TimingsMultipleFieldsWithTemplate(t *testing.T) {
 func TestParse_TimingsMultipleFieldsWithoutTemplate(t *testing.T) {
 	s := NewTestStatsd()
 	s.Templates = []string{}
-	s.Percentiles = []internal.Number{{Value: 90.0}}
+	s.Percentiles = []Number{90.0}
 	acc := &testutil.Accumulator{}
 
 	validLines := []string{
@@ -1280,18 +1653,16 @@ func TestParse_TimingsMultipleFieldsWithoutTemplate(t *testing.T) {
 	}
 
 	for _, line := range validLines {
-		err := s.parseStatsdLine(line)
-		if err != nil {
-			t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-		}
+		require.NoErrorf(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 	}
-	s.Gather(acc)
+	require.NoError(t, s.Gather(acc))
 
 	expectedSuccess := map[string]interface{}{
 		"90_percentile": float64(11),
 		"count":         int64(5),
 		"lower":         float64(1),
 		"mean":          float64(3),
+		"median":        float64(1),
 		"stddev":        float64(4),
 		"sum":           float64(15),
 		"upper":         float64(11),
@@ -1301,6 +1672,7 @@ func TestParse_TimingsMultipleFieldsWithoutTemplate(t *testing.T) {
 		"count":         int64(5),
 		"lower":         float64(2),
 		"mean":          float64(6),
+		"median":        float64(2),
 		"stddev":        float64(8),
 		"sum":           float64(30),
 		"upper":         float64(22),
@@ -1444,23 +1816,15 @@ func TestParse_Timings_Delete(t *testing.T) {
 	s := NewTestStatsd()
 	s.DeleteTimings = true
 	fakeacc := &testutil.Accumulator{}
-	var err error
 
 	line := "timing:100|ms"
-	err = s.parseStatsdLine(line)
-	if err != nil {
-		t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-	}
+	require.NoError(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 
-	if len(s.timings) != 1 {
-		t.Errorf("Should be 1 timing, found %d", len(s.timings))
-	}
+	require.Lenf(t, s.timings, 1, "Should be 1 timing, found %d", len(s.timings))
 
-	s.Gather(fakeacc)
+	require.NoError(t, s.Gather(fakeacc))
 
-	if len(s.timings) != 0 {
-		t.Errorf("All timings should have been deleted, found %d", len(s.timings))
-	}
+	require.Emptyf(t, s.timings, "All timings should have been deleted, found %d", len(s.timings))
 }
 
 // Tests the delete_gauges option
@@ -1468,25 +1832,15 @@ func TestParse_Gauges_Delete(t *testing.T) {
 	s := NewTestStatsd()
 	s.DeleteGauges = true
 	fakeacc := &testutil.Accumulator{}
-	var err error
 
 	line := "current.users:100|g"
-	err = s.parseStatsdLine(line)
-	if err != nil {
-		t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-	}
+	require.NoError(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 
-	err = testValidateGauge("current_users", 100, s.gauges)
-	if err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateGauge("current_users", 100, s.gauges))
 
-	s.Gather(fakeacc)
+	require.NoError(t, s.Gather(fakeacc))
 
-	err = testValidateGauge("current_users", 100, s.gauges)
-	if err == nil {
-		t.Error("current_users_gauge metric should have been deleted")
-	}
+	require.Error(t, testValidateGauge("current_users", 100, s.gauges), "current_users_gauge metric should have been deleted")
 }
 
 // Tests the delete_sets option
@@ -1494,25 +1848,15 @@ func TestParse_Sets_Delete(t *testing.T) {
 	s := NewTestStatsd()
 	s.DeleteSets = true
 	fakeacc := &testutil.Accumulator{}
-	var err error
 
 	line := "unique.user.ids:100|s"
-	err = s.parseStatsdLine(line)
-	if err != nil {
-		t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-	}
+	require.NoError(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error", line)
 
-	err = testValidateSet("unique_user_ids", 1, s.sets)
-	if err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateSet("unique_user_ids", 1, s.sets))
 
-	s.Gather(fakeacc)
+	require.NoError(t, s.Gather(fakeacc))
 
-	err = testValidateSet("unique_user_ids", 1, s.sets)
-	if err == nil {
-		t.Error("unique_user_ids_set metric should have been deleted")
-	}
+	require.Error(t, testValidateSet("unique_user_ids", 1, s.sets), "unique_user_ids_set metric should have been deleted")
 }
 
 // Tests the delete_counters option
@@ -1520,43 +1864,25 @@ func TestParse_Counters_Delete(t *testing.T) {
 	s := NewTestStatsd()
 	s.DeleteCounters = true
 	fakeacc := &testutil.Accumulator{}
-	var err error
 
 	line := "total.users:100|c"
-	err = s.parseStatsdLine(line)
-	if err != nil {
-		t.Errorf("Parsing line %s should not have resulted in an error\n", line)
-	}
+	require.NoError(t, s.parseStatsdLine(line), "Parsing line %s should not have resulted in an error\n", line)
 
-	err = testValidateCounter("total_users", 100, s.counters)
-	if err != nil {
-		t.Error(err.Error())
-	}
+	require.NoError(t, testValidateCounter("total_users", 100, s.counters))
 
-	s.Gather(fakeacc)
+	require.NoError(t, s.Gather(fakeacc))
 
-	err = testValidateCounter("total_users", 100, s.counters)
-	if err == nil {
-		t.Error("total_users_counter metric should have been deleted")
-	}
+	require.Error(t, testValidateCounter("total_users", 100, s.counters), "total_users_counter metric should have been deleted")
 }
 
 func TestParseKeyValue(t *testing.T) {
 	k, v := parseKeyValue("foo=bar")
-	if k != "foo" {
-		t.Errorf("Expected %s, got %s", "foo", k)
-	}
-	if v != "bar" {
-		t.Errorf("Expected %s, got %s", "bar", v)
-	}
+	require.Equalf(t, "foo", k, "Expected %s, got %s", "foo", k)
+	require.Equalf(t, "bar", v, "Expected %s, got %s", "bar", v)
 
 	k2, v2 := parseKeyValue("baz")
-	if k2 != "" {
-		t.Errorf("Expected %s, got %s", "", k2)
-	}
-	if v2 != "baz" {
-		t.Errorf("Expected %s, got %s", "baz", v2)
-	}
+	require.Equalf(t, "", k2, "Expected %s, got %s", "", k2)
+	require.Equalf(t, "baz", v2, "Expected %s, got %s", "baz", v2)
 }
 
 // Test utility functions
@@ -1648,7 +1974,7 @@ func testValidateGauge(
 	}
 
 	if valueExpected != valueActual {
-		return fmt.Errorf("Measurement: %s, expected %f, actual %f", name, valueExpected, valueActual)
+		return fmt.Errorf("measurement: %s, expected %f, actual %f", name, valueExpected, valueActual)
 	}
 	return nil
 }
@@ -1660,6 +1986,7 @@ func TestTCP(t *testing.T) {
 		ServiceAddress:         "localhost:0",
 		AllowedPendingMessages: 10000,
 		MaxTCPConnections:      2,
+		NumberWorkerThreads:    5,
 	}
 	var acc testutil.Accumulator
 	require.NoError(t, statsd.Start(&acc))
@@ -1668,14 +1995,14 @@ func TestTCP(t *testing.T) {
 	addr := statsd.TCPlistener.Addr().String()
 
 	conn, err := net.Dial("tcp", addr)
-	_, err = conn.Write([]byte("cpu.time_idle:42|c\n"))
-	require.NoError(t, err)
-	err = conn.Close()
 	require.NoError(t, err)
 
+	_, err = conn.Write([]byte("cpu.time_idle:42|c\n"))
+	require.NoError(t, err)
+	require.NoError(t, conn.Close())
+
 	for {
-		err = statsd.Gather(&acc)
-		require.NoError(t, err)
+		require.NoError(t, statsd.Gather(&acc))
 
 		if len(acc.Metrics) > 0 {
 			break
@@ -1705,22 +2032,22 @@ func TestUdp(t *testing.T) {
 	statsd := Statsd{
 		Log:                    testutil.Logger{},
 		Protocol:               "udp",
-		ServiceAddress:         "localhost:8125",
+		ServiceAddress:         "localhost:14223",
 		AllowedPendingMessages: 250000,
+		NumberWorkerThreads:    5,
 	}
 	var acc testutil.Accumulator
 	require.NoError(t, statsd.Start(&acc))
 	defer statsd.Stop()
 
-	conn, err := net.Dial("udp", "127.0.0.1:8125")
+	conn, err := net.Dial("udp", "127.0.0.1:14223")
+	require.NoError(t, err)
 	_, err = conn.Write([]byte("cpu.time_idle:42|c\n"))
 	require.NoError(t, err)
-	err = conn.Close()
-	require.NoError(t, err)
+	require.NoError(t, conn.Close())
 
 	for {
-		err = statsd.Gather(&acc)
-		require.NoError(t, err)
+		require.NoError(t, statsd.Gather(&acc))
 
 		if len(acc.Metrics) > 0 {
 			break
@@ -1744,4 +2071,247 @@ func TestUdp(t *testing.T) {
 		acc.GetTelegrafMetrics(),
 		testutil.IgnoreTime(),
 	)
+}
+
+func TestUdpFillQueue(t *testing.T) {
+	logger := testutil.CaptureLogger{}
+	plugin := &Statsd{
+		Log:                    &logger,
+		Protocol:               "udp",
+		ServiceAddress:         "localhost:0",
+		AllowedPendingMessages: 10,
+		NumberWorkerThreads:    5,
+	}
+
+	var acc testutil.Accumulator
+	require.NoError(t, plugin.Start(&acc))
+
+	conn, err := net.Dial("udp", plugin.UDPlistener.LocalAddr().String())
+	require.NoError(t, err)
+	numberToSend := plugin.AllowedPendingMessages
+	for i := 0; i < numberToSend; i++ {
+		_, _ = fmt.Fprintf(conn, "cpu.time_idle:%d|c\n", i)
+	}
+	require.NoError(t, conn.Close())
+
+	require.Eventually(t, func() bool {
+		return plugin.UDPPacketsRecv.Get() >= int64(numberToSend)
+	}, 1*time.Second, 100*time.Millisecond)
+	defer plugin.Stop()
+
+	errs := logger.Errors()
+	require.Emptyf(t, errs, "got errors: %v", errs)
+}
+
+func TestParse_Ints(t *testing.T) {
+	s := NewTestStatsd()
+	s.Percentiles = []Number{90}
+	acc := &testutil.Accumulator{}
+
+	require.NoError(t, s.Gather(acc))
+	require.Equal(t, []Number{90.0}, s.Percentiles)
+}
+
+func TestParse_KeyValue(t *testing.T) {
+	type output struct {
+		key string
+		val string
+	}
+
+	validLines := []struct {
+		input  string
+		output output
+	}{
+		{"", output{"", ""}},
+		{"only value", output{"", "only value"}},
+		{"key=value", output{"key", "value"}},
+		{"url=/api/querystring?key1=val1&key2=value", output{"url", "/api/querystring?key1=val1&key2=value"}},
+	}
+
+	for _, line := range validLines {
+		key, val := parseKeyValue(line.input)
+		if key != line.output.key {
+			t.Errorf("line: %s,  key expected %s, actual %s", line, line.output.key, key)
+		}
+		if val != line.output.val {
+			t.Errorf("line: %s,  val expected %s, actual %s", line, line.output.val, val)
+		}
+	}
+}
+
+func TestParseSanitize(t *testing.T) {
+	s := NewTestStatsd()
+	s.SanitizeNamesMethod = "upstream"
+
+	tests := []struct {
+		inName  string
+		outName string
+	}{
+		{
+			"regex.ARP flood stats",
+			"regex_ARP_flood_stats",
+		},
+		{
+			"regex./dev/null",
+			"regex_-dev-null",
+		},
+		{
+			"regex.wow!!!",
+			"regex_wow",
+		},
+		{
+			"regex.all*things",
+			"regex_allthings",
+		},
+	}
+
+	for _, test := range tests {
+		name, _, _ := s.parseName(test.inName)
+		require.Equalf(t, name, test.outName, "Expected: %s, got %s", test.outName, name)
+	}
+}
+
+func TestParseNoSanitize(t *testing.T) {
+	s := NewTestStatsd()
+	s.SanitizeNamesMethod = ""
+
+	tests := []struct {
+		inName  string
+		outName string
+	}{
+		{
+			"regex.ARP flood stats",
+			"regex_ARP",
+		},
+		{
+			"regex./dev/null",
+			"regex_/dev/null",
+		},
+		{
+			"regex.wow!!!",
+			"regex_wow!!!",
+		},
+		{
+			"regex.all*things",
+			"regex_all*things",
+		},
+	}
+
+	for _, test := range tests {
+		name, _, _ := s.parseName(test.inName)
+		require.Equalf(t, name, test.outName, "Expected: %s, got %s", test.outName, name)
+	}
+}
+
+func TestParse_InvalidAndRecoverIntegration(t *testing.T) {
+	statsd := Statsd{
+		Log:                    testutil.Logger{},
+		Protocol:               "tcp",
+		ServiceAddress:         "localhost:8125",
+		AllowedPendingMessages: 10000,
+		MaxTCPConnections:      250,
+		TCPKeepAlive:           true,
+		NumberWorkerThreads:    5,
+	}
+
+	acc := &testutil.Accumulator{}
+	require.NoError(t, statsd.Start(acc))
+	defer statsd.Stop()
+
+	addr := statsd.TCPlistener.Addr().String()
+	conn, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+
+	// first write an invalid line
+	_, err = conn.Write([]byte("test.service.stat.missing_value:|h\n"))
+	require.NoError(t, err)
+
+	// pause to let statsd to parse the metric and force a collection interval
+	time.Sleep(100 * time.Millisecond)
+	require.NoError(t, statsd.Gather(acc))
+
+	// then verify we can write a valid line, service recovered
+	_, err = conn.Write([]byte("cpu.time_idle:42|c\n"))
+	require.NoError(t, err)
+
+	time.Sleep(100 * time.Millisecond)
+	require.NoError(t, statsd.Gather(acc))
+	acc.Wait(1)
+
+	expected := []telegraf.Metric{
+		testutil.MustMetric(
+			"cpu_time_idle",
+			map[string]string{
+				"metric_type": "counter",
+			},
+			map[string]interface{}{
+				"value": 42,
+			},
+			time.Now(),
+			telegraf.Counter,
+		),
+	}
+	testutil.RequireMetricsEqual(t, expected, acc.GetTelegrafMetrics(), testutil.IgnoreTime())
+
+	require.NoError(t, conn.Close())
+}
+
+func TestParse_DeltaCounter(t *testing.T) {
+	statsd := Statsd{
+		Log:                    testutil.Logger{},
+		Protocol:               "tcp",
+		ServiceAddress:         "localhost:8125",
+		AllowedPendingMessages: 10000,
+		MaxTCPConnections:      250,
+		TCPKeepAlive:           true,
+		NumberWorkerThreads:    5,
+		// Delete Counters causes Delta temporality to be added
+		DeleteCounters:               true,
+		lastGatherTime:               time.Now(),
+		EnableAggregationTemporality: true,
+	}
+
+	acc := &testutil.Accumulator{}
+	require.NoError(t, statsd.Start(acc))
+	defer statsd.Stop()
+
+	addr := statsd.TCPlistener.Addr().String()
+	conn, err := net.Dial("tcp", addr)
+	require.NoError(t, err)
+
+	_, err = conn.Write([]byte("cpu.time_idle:42|c\n"))
+	require.NoError(t, err)
+
+	require.Eventuallyf(t, func() bool {
+		require.NoError(t, statsd.Gather(acc))
+		return acc.NMetrics() >= 1
+	}, time.Second, 100*time.Millisecond, "Expected 1 metric found %d", acc.NMetrics())
+
+	expected := []telegraf.Metric{
+		testutil.MustMetric(
+			"cpu_time_idle",
+			map[string]string{
+				"metric_type": "counter",
+				"temporality": "delta",
+			},
+			map[string]interface{}{
+				"value": 42,
+			},
+			time.Now(),
+			telegraf.Counter,
+		),
+	}
+	got := acc.GetTelegrafMetrics()
+	testutil.RequireMetricsEqual(t, expected, got, testutil.IgnoreTime(), testutil.IgnoreFields("start_time"))
+
+	startTime, ok := got[0].GetField("start_time")
+	require.True(t, ok, "expected start_time field")
+
+	startTimeStr, ok := startTime.(string)
+	require.True(t, ok, "expected start_time field to be a string")
+
+	_, err = time.Parse(time.RFC3339, startTimeStr)
+	require.NoError(t, err, "execpted start_time field to be in RFC3339 format")
+
+	require.NoError(t, conn.Close())
 }

@@ -2,9 +2,27 @@
 
 The `warp10` output plugin writes metrics to [Warp 10][].
 
-### Configuration
+## Global configuration options <!-- @/docs/includes/plugin_config.md -->
 
-```toml
+In addition to the plugin-specific configuration settings, plugins support
+additional global and plugin configuration settings. These settings are used to
+modify metrics, tags, and field or create aliases and configure ordering, etc.
+See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
+
+[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+
+## Secret-store support
+
+This plugin supports secrets from secret-stores for the `token` option.
+See the [secret-store documentation][SECRETSTORE] for more details on how
+to use them.
+
+[SECRETSTORE]: ../../../docs/CONFIGURATION.md#secret-store-secrets
+
+## Configuration
+
+```toml @sample.conf
+# Write metrics to Warp 10
 [[outputs.warp10]]
   # Prefix to add to the measurement.
   prefix = "telegraf."
@@ -32,7 +50,7 @@ The `warp10` output plugin writes metrics to [Warp 10][].
   # insecure_skip_verify = false
 ```
 
-### Output Format
+## Output Format
 
 Metrics are converted and sent using the [Geo Time Series][] (GTS) input format.
 

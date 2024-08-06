@@ -1,4 +1,4 @@
-// +build windows
+//go:build windows
 
 package processes
 
@@ -16,7 +16,7 @@ func (e *Processes) Init() error {
 	return nil
 }
 
-func (e *Processes) Gather(acc telegraf.Accumulator) error {
+func (e *Processes) Gather(_ telegraf.Accumulator) error {
 	return nil
 }
 

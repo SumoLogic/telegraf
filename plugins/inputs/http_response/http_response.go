@@ -1,24 +1,34 @@
+//go:generate ../../../tools/readme_config_includer/generator
 package http_response
 
 import (
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/benbjohnson/clock"
+	"github.com/seancfoley/ipaddress-go/ipaddr"
+
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/internal"
+	"github.com/influxdata/telegraf/plugins/common/cookie"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
+
+//go:embed sample.conf
+var sampleConfig string
 
 const (
 	// defaultResponseBodyMaxSize is the default maximum response body size, in bytes.
@@ -28,138 +38,63 @@ const (
 
 // HTTPResponse struct
 type HTTPResponse struct {
-	Address         string   // deprecated in 1.12
-	URLs            []string `toml:"urls"`
-	HTTPProxy       string   `toml:"http_proxy"`
-	Body            string
-	Method          string
-	ResponseTimeout internal.Duration
-	HTTPHeaderTags  map[string]string `toml:"http_header_tags"`
-	Headers         map[string]string
-	FollowRedirects bool
+	Address         string              `toml:"address" deprecated:"1.12.0;1.35.0;use 'urls' instead"`
+	URLs            []string            `toml:"urls"`
+	HTTPProxy       string              `toml:"http_proxy"`
+	Body            string              `toml:"body"`
+	BodyForm        map[string][]string `toml:"body_form"`
+	Method          string              `toml:"method"`
+	ResponseTimeout config.Duration     `toml:"response_timeout"`
+	HTTPHeaderTags  map[string]string   `toml:"http_header_tags"`
+	Headers         map[string]string   `toml:"headers"`
+	FollowRedirects bool                `toml:"follow_redirects"`
 	// Absolute path to file with Bearer token
-	BearerToken         string        `toml:"bearer_token"`
-	ResponseBodyField   string        `toml:"response_body_field"`
-	ResponseBodyMaxSize internal.Size `toml:"response_body_max_size"`
-	ResponseStringMatch string
-	ResponseStatusCode  int
-	Interface           string
+	BearerToken         string      `toml:"bearer_token"`
+	ResponseBodyField   string      `toml:"response_body_field"`
+	ResponseBodyMaxSize config.Size `toml:"response_body_max_size"`
+	ResponseStringMatch string      `toml:"response_string_match"`
+	ResponseStatusCode  int         `toml:"response_status_code"`
+	Interface           string      `toml:"interface"`
 	// HTTP Basic Auth Credentials
-	Username string `toml:"username"`
-	Password string `toml:"password"`
+	Username config.Secret `toml:"username"`
+	Password config.Secret `toml:"password"`
 	tls.ClientConfig
+	cookie.CookieAuthConfig
 
-	Log telegraf.Logger
+	Log telegraf.Logger `toml:"-"`
 
 	compiledStringMatch *regexp.Regexp
-	client              *http.Client
+	clients             []client
 }
 
-// Description returns the plugin Description
-func (h *HTTPResponse) Description() string {
-	return "HTTP/HTTPS request given an address a method and a timeout"
+type client struct {
+	httpClient httpClient
+	address    string
 }
 
-var sampleConfig = `
-  ## Deprecated in 1.12, use 'urls'
-  ## Server address (default http://localhost)
-  # address = "http://localhost"
-
-  ## List of urls to query.
-  # urls = ["http://localhost"]
-
-  ## Set http_proxy (telegraf uses the system wide proxy settings if it's is not set)
-  # http_proxy = "http://localhost:8888"
-
-  ## Set response_timeout (default 5 seconds)
-  # response_timeout = "5s"
-
-  ## HTTP Request Method
-  # method = "GET"
-
-  ## Whether to follow redirects from the server (defaults to false)
-  # follow_redirects = false
-
-  ## Optional file with Bearer token
-  ## file content is added as an Authorization header
-  # bearer_token = "/path/to/file"
-
-  ## Optional HTTP Basic Auth Credentials
-  # username = "username"
-  # password = "pa$$word"
-
-  ## Optional HTTP Request Body
-  # body = '''
-  # {'fake':'data'}
-  # '''
-
-  ## Optional name of the field that will contain the body of the response. 
-  ## By default it is set to an empty String indicating that the body's content won't be added 
-  # response_body_field = ''
-
-  ## Maximum allowed HTTP response body size in bytes.
-  ## 0 means to use the default of 32MiB.
-  ## If the response body size exceeds this limit a "body_read_error" will be raised
-  # response_body_max_size = "32MiB"
-
-  ## Optional substring or regex match in body of the response (case sensitive)
-  # response_string_match = "\"service_status\": \"up\""
-  # response_string_match = "ok"
-  # response_string_match = "\".*_status\".?:.?\"up\""
-
-  ## Expected response status code.
-  ## The status code of the response is compared to this value. If they match, the field
-  ## "response_status_code_match" will be 1, otherwise it will be 0. If the
-  ## expected status code is 0, the check is disabled and the field won't be added.
-  # response_status_code = 0
-
-  ## Optional TLS Config
-  # tls_ca = "/etc/telegraf/ca.pem"
-  # tls_cert = "/etc/telegraf/cert.pem"
-  # tls_key = "/etc/telegraf/key.pem"
-  ## Use TLS but skip chain & host verification
-  # insecure_skip_verify = false
-
-  ## HTTP Request Headers (all values must be strings)
-  # [inputs.http_response.headers]
-  #   Host = "github.com"
-
-  ## Optional setting to map response http headers into tags
-  ## If the http header is not present on the request, no corresponding tag will be added
-  ## If multiple instances of the http header are present, only the first value will be used
-  # http_header_tags = {"HTTP_HEADER" = "TAG_NAME"}
-
-  ## Interface to use when dialing an address
-  # interface = "eth0"
-`
-
-// SampleConfig returns the plugin SampleConfig
-func (h *HTTPResponse) SampleConfig() string {
-	return sampleConfig
+type httpClient interface {
+	Do(req *http.Request) (*http.Response, error)
 }
 
-// ErrRedirectAttempted indicates that a redirect occurred
-var ErrRedirectAttempted = errors.New("redirect")
-
-// Set the proxy. A configured proxy overwrites the system wide proxy.
-func getProxyFunc(http_proxy string) func(*http.Request) (*url.URL, error) {
-	if http_proxy == "" {
+// Set the proxy. A configured proxy overwrites the system-wide proxy.
+func getProxyFunc(httpProxy string) func(*http.Request) (*url.URL, error) {
+	if httpProxy == "" {
 		return http.ProxyFromEnvironment
 	}
-	proxyURL, err := url.Parse(http_proxy)
+	proxyURL, err := url.Parse(httpProxy)
 	if err != nil {
 		return func(_ *http.Request) (*url.URL, error) {
 			return nil, errors.New("bad proxy: " + err.Error())
 		}
 	}
-	return func(r *http.Request) (*url.URL, error) {
+	return func(*http.Request) (*url.URL, error) {
 		return proxyURL, nil
 	}
 }
 
-// createHttpClient creates an http client which will timeout at the specified
+// createHTTPClient creates an http client which will time out at the specified
 // timeout period and can follow redirects if specified
-func (h *HTTPResponse) createHttpClient() (*http.Client, error) {
+func (h *HTTPResponse) createHTTPClient(address url.URL) (*http.Client, error) {
 	tlsCfg, err := h.ClientConfig.TLSConfig()
 	if err != nil {
 		return nil, err
@@ -168,7 +103,7 @@ func (h *HTTPResponse) createHttpClient() (*http.Client, error) {
 	dialer := &net.Dialer{}
 
 	if h.Interface != "" {
-		dialer.LocalAddr, err = localAddress(h.Interface)
+		dialer.LocalAddr, err = localAddress(h.Interface, address)
 		if err != nil {
 			return nil, err
 		}
@@ -181,18 +116,25 @@ func (h *HTTPResponse) createHttpClient() (*http.Client, error) {
 			DisableKeepAlives: true,
 			TLSClientConfig:   tlsCfg,
 		},
-		Timeout: h.ResponseTimeout.Duration,
+		Timeout: time.Duration(h.ResponseTimeout),
 	}
 
-	if h.FollowRedirects == false {
-		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+	if !h.FollowRedirects {
+		client.CheckRedirect = func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		}
 	}
+
+	if h.CookieAuthConfig.URL != "" {
+		if err := h.CookieAuthConfig.Start(client, h.Log, clock.New()); err != nil {
+			return nil, err
+		}
+	}
+
 	return client, nil
 }
 
-func localAddress(interfaceName string) (net.Addr, error) {
+func localAddress(interfaceName string, address url.URL) (net.Addr, error) {
 	i, err := net.InterfaceByName(interfaceName)
 	if err != nil {
 		return nil, err
@@ -203,18 +145,47 @@ func localAddress(interfaceName string) (net.Addr, error) {
 		return nil, err
 	}
 
+	urlInIPv6, zone := isURLInIPv6(address)
 	for _, addr := range addrs {
 		if naddr, ok := addr.(*net.IPNet); ok {
-			// leaving port set to zero to let kernel pick
-			return &net.TCPAddr{IP: naddr.IP}, nil
+			ipNetInIPv6 := isIPNetInIPv6(naddr)
+
+			// choose interface address in the same format as server address
+			if ipNetInIPv6 == urlInIPv6 {
+				// leaving port set to zero to let kernel pick, but set zone
+				return &net.TCPAddr{IP: naddr.IP, Zone: zone}, nil
+			}
 		}
 	}
 
-	return nil, fmt.Errorf("cannot create local address for interface %q", interfaceName)
+	return nil, fmt.Errorf("cannot create local address for interface %q and server address %q", interfaceName, address.String())
 }
 
-func setResult(result_string string, fields map[string]interface{}, tags map[string]string) {
-	result_codes := map[string]int{
+// isURLInIPv6 returns (true, zoneName) only when URL is in IPv6 format.
+// For other cases (host part of url cannot be successfully validated, doesn't contain address at all or is in IPv4 format), it returns (false, "").
+func isURLInIPv6(address url.URL) (bool, string) {
+	host := ipaddr.NewHostName(address.Host)
+	if err := host.Validate(); err != nil {
+		return false, ""
+	}
+	if hostAddr := host.AsAddress(); hostAddr != nil {
+		if ipv6 := hostAddr.ToIPv6(); ipv6 != nil {
+			return true, ipv6.GetZone().String()
+		}
+	}
+
+	return false, ""
+}
+
+// isIPNetInIPv6 returns true only when IPNet can be represented in IPv6 format.
+// For other cases (address cannot be successfully parsed or is in IPv4 format), it returns false.
+func isIPNetInIPv6(address *net.IPNet) bool {
+	ipAddr, err := ipaddr.NewIPAddressFromNetIPNet(address)
+	return err == nil && ipAddr.ToIPv6() != nil
+}
+
+func setResult(resultString string, fields map[string]interface{}, tags map[string]string) {
+	resultCodes := map[string]int{
 		"success":                       0,
 		"response_string_mismatch":      1,
 		"body_read_error":               2,
@@ -224,33 +195,36 @@ func setResult(result_string string, fields map[string]interface{}, tags map[str
 		"response_status_code_mismatch": 6,
 	}
 
-	tags["result"] = result_string
-	fields["result_type"] = result_string
-	fields["result_code"] = result_codes[result_string]
+	tags["result"] = resultString
+	fields["result_type"] = resultString
+	fields["result_code"] = resultCodes[resultString]
 }
 
 func setError(err error, fields map[string]interface{}, tags map[string]string) error {
-	if timeoutError, ok := err.(net.Error); ok && timeoutError.Timeout() {
+	var timeoutError net.Error
+	if errors.As(err, &timeoutError) && timeoutError.Timeout() {
 		setResult("timeout", fields, tags)
 		return timeoutError
 	}
 
-	urlErr, isUrlErr := err.(*url.Error)
-	if !isUrlErr {
+	var urlErr *url.Error
+	if !errors.As(err, &urlErr) {
 		return nil
 	}
 
-	opErr, isNetErr := (urlErr.Err).(*net.OpError)
-	if isNetErr {
-		switch e := (opErr.Err).(type) {
-		case (*net.DNSError):
+	var opErr *net.OpError
+	if errors.As(urlErr, &opErr) {
+		var dnsErr *net.DNSError
+		var parseErr *net.ParseError
+
+		if errors.As(opErr, &dnsErr) {
 			setResult("dns_error", fields, tags)
-			return e
-		case (*net.ParseError):
+			return dnsErr
+		} else if errors.As(opErr, &parseErr) {
 			// Parse error has to do with parsing of IP addresses, so we
 			// group it with address errors
 			setResult("address_error", fields, tags)
-			return e
+			return parseErr
 		}
 	}
 
@@ -258,22 +232,35 @@ func setError(err error, fields map[string]interface{}, tags map[string]string) 
 }
 
 // HTTPGather gathers all fields and returns any errors it encounters
-func (h *HTTPResponse) httpGather(u string) (map[string]interface{}, map[string]string, error) {
+func (h *HTTPResponse) httpGather(cl client) (map[string]interface{}, map[string]string, error) {
 	// Prepare fields and tags
 	fields := make(map[string]interface{})
-	tags := map[string]string{"server": u, "method": h.Method}
+	tags := map[string]string{"server": cl.address, "method": h.Method}
 
 	var body io.Reader
 	if h.Body != "" {
 		body = strings.NewReader(h.Body)
+	} else if len(h.BodyForm) != 0 {
+		values := url.Values{}
+		for k, vs := range h.BodyForm {
+			for _, v := range vs {
+				values.Add(k, v)
+			}
+		}
+		body = strings.NewReader(values.Encode())
 	}
-	request, err := http.NewRequest(h.Method, u, body)
+
+	request, err := http.NewRequest(h.Method, cl.address, body)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	if _, uaPresent := h.Headers["User-Agent"]; !uaPresent {
+		request.Header.Set("User-Agent", internal.ProductToken())
+	}
+
 	if h.BearerToken != "" {
-		token, err := ioutil.ReadFile(h.BearerToken)
+		token, err := os.ReadFile(h.BearerToken)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -288,36 +275,32 @@ func (h *HTTPResponse) httpGather(u string) (map[string]interface{}, map[string]
 		}
 	}
 
-	if h.Username != "" || h.Password != "" {
-		request.SetBasicAuth(h.Username, h.Password)
+	if err := h.setRequestAuth(request); err != nil {
+		return nil, nil, err
 	}
 
 	// Start Timer
 	start := time.Now()
-	resp, err := h.client.Do(request)
-	response_time := time.Since(start).Seconds()
+	resp, err := cl.httpClient.Do(request)
+	responseTime := time.Since(start).Seconds()
 
 	// If an error in returned, it means we are dealing with a network error, as
 	// HTTP error codes do not generate errors in the net/http library
 	if err != nil {
 		// Log error
-		h.Log.Debugf("Network error while polling %s: %s", u, err.Error())
+		h.Log.Debugf("Network error while polling %s: %s", cl.address, err.Error())
 
 		// Get error details
-		netErr := setError(err, fields, tags)
-
-		// If recognize the returned error, get out
-		if netErr != nil {
-			return fields, tags, nil
+		if setError(err, fields, tags) == nil {
+			// Any error not recognized by `set_error` is considered a "connection_failed"
+			setResult("connection_failed", fields, tags)
 		}
 
-		// Any error not recognized by `set_error` is considered a "connection_failed"
-		setResult("connection_failed", fields, tags)
 		return fields, tags, nil
 	}
 
 	if _, ok := fields["response_time"]; !ok {
-		fields["response_time"] = response_time
+		fields["response_time"] = responseTime
 	}
 
 	// This function closes the response body, as
@@ -336,16 +319,16 @@ func (h *HTTPResponse) httpGather(u string) (map[string]interface{}, map[string]
 	tags["status_code"] = strconv.Itoa(resp.StatusCode)
 	fields["http_response_code"] = resp.StatusCode
 
-	if h.ResponseBodyMaxSize.Size == 0 {
-		h.ResponseBodyMaxSize.Size = defaultResponseBodyMaxSize
+	if h.ResponseBodyMaxSize == 0 {
+		h.ResponseBodyMaxSize = config.Size(defaultResponseBodyMaxSize)
 	}
-	bodyBytes, err := ioutil.ReadAll(io.LimitReader(resp.Body, h.ResponseBodyMaxSize.Size+1))
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, int64(h.ResponseBodyMaxSize)+1))
 	// Check first if the response body size exceeds the limit.
-	if err == nil && int64(len(bodyBytes)) > h.ResponseBodyMaxSize.Size {
+	if err == nil && int64(len(bodyBytes)) > int64(h.ResponseBodyMaxSize) {
 		h.setBodyReadError("The body of the HTTP Response is too large", bodyBytes, fields, tags)
 		return fields, tags, nil
 	} else if err != nil {
-		h.setBodyReadError(fmt.Sprintf("Failed to read body of HTTP Response : %s", err.Error()), bodyBytes, fields, tags)
+		h.setBodyReadError("Failed to read body of HTTP Response : "+err.Error(), bodyBytes, fields, tags)
 		return fields, tags, nil
 	}
 
@@ -392,8 +375,8 @@ func (h *HTTPResponse) httpGather(u string) (map[string]interface{}, map[string]
 }
 
 // Set result in case of a body read error
-func (h *HTTPResponse) setBodyReadError(error_msg string, bodyBytes []byte, fields map[string]interface{}, tags map[string]string) {
-	h.Log.Debugf(error_msg)
+func (h *HTTPResponse) setBodyReadError(errorMsg string, bodyBytes []byte, fields map[string]interface{}, tags map[string]string) {
+	h.Log.Debugf(errorMsg)
 	setResult("body_read_error", fields, tags)
 	fields["content_length"] = len(bodyBytes)
 	if h.ResponseStringMatch != "" {
@@ -401,22 +384,24 @@ func (h *HTTPResponse) setBodyReadError(error_msg string, bodyBytes []byte, fiel
 	}
 }
 
-// Gather gets all metric fields and tags and returns any errors it encounters
-func (h *HTTPResponse) Gather(acc telegraf.Accumulator) error {
-	// Compile the body regex if it exist
-	if h.compiledStringMatch == nil {
+func (*HTTPResponse) SampleConfig() string {
+	return sampleConfig
+}
+
+func (h *HTTPResponse) Init() error {
+	// Compile the body regex if it exists
+	if h.ResponseStringMatch != "" {
 		var err error
 		h.compiledStringMatch, err = regexp.Compile(h.ResponseStringMatch)
 		if err != nil {
-			return fmt.Errorf("Failed to compile regular expression %s : %s", h.ResponseStringMatch, err)
+			return fmt.Errorf("failed to compile regular expression %q: %w", h.ResponseStringMatch, err)
 		}
 	}
 
 	// Set default values
-	if h.ResponseTimeout.Duration < time.Second {
-		h.ResponseTimeout.Duration = time.Second * 5
+	if h.ResponseTimeout < config.Duration(time.Second) {
+		h.ResponseTimeout = config.Duration(time.Second * 5)
 	}
-	// Check send and expected string
 	if h.Method == "" {
 		h.Method = "GET"
 	}
@@ -425,37 +410,41 @@ func (h *HTTPResponse) Gather(acc telegraf.Accumulator) error {
 		if h.Address == "" {
 			h.URLs = []string{"http://localhost"}
 		} else {
-			h.Log.Warn("'address' deprecated in telegraf 1.12, please use 'urls'")
 			h.URLs = []string{h.Address}
 		}
 	}
 
-	if h.client == nil {
-		client, err := h.createHttpClient()
-		if err != nil {
-			return err
-		}
-		h.client = client
-	}
-
+	h.clients = make([]client, 0, len(h.URLs))
 	for _, u := range h.URLs {
 		addr, err := url.Parse(u)
 		if err != nil {
-			acc.AddError(err)
-			continue
+			return fmt.Errorf("%q is not a valid address: %w", u, err)
 		}
 
 		if addr.Scheme != "http" && addr.Scheme != "https" {
-			acc.AddError(errors.New("Only http and https are supported"))
-			continue
+			return fmt.Errorf("%q is not a valid address: only http and https types are supported", u)
 		}
 
+		cl, err := h.createHTTPClient(*addr)
+		if err != nil {
+			return err
+		}
+
+		h.clients = append(h.clients, client{httpClient: cl, address: u})
+	}
+
+	return nil
+}
+
+// Gather gets all metric fields and tags and returns any errors it encounters
+func (h *HTTPResponse) Gather(acc telegraf.Accumulator) error {
+	for _, c := range h.clients {
 		// Prepare data
 		var fields map[string]interface{}
 		var tags map[string]string
 
 		// Gather data
-		fields, tags, err = h.httpGather(u)
+		fields, tags, err := h.httpGather(c)
 		if err != nil {
 			acc.AddError(err)
 			continue
@@ -464,6 +453,26 @@ func (h *HTTPResponse) Gather(acc telegraf.Accumulator) error {
 		// Add metrics
 		acc.AddFields("http_response", fields, tags)
 	}
+
+	return nil
+}
+
+func (h *HTTPResponse) setRequestAuth(request *http.Request) error {
+	if h.Username.Empty() || h.Password.Empty() {
+		return nil
+	}
+
+	username, err := h.Username.Get()
+	if err != nil {
+		return fmt.Errorf("getting username failed: %w", err)
+	}
+	defer username.Destroy()
+	password, err := h.Password.Get()
+	if err != nil {
+		return fmt.Errorf("getting password failed: %w", err)
+	}
+	defer password.Destroy()
+	request.SetBasicAuth(username.String(), password.String())
 
 	return nil
 }

@@ -19,19 +19,15 @@ type Config struct {
 
 // Validate validates the config's templates and tags.
 func (c *Config) Validate() error {
-	if err := c.validateTemplates(); err != nil {
-		return err
-	}
-
-	return nil
+	return c.validateTemplates()
 }
 
 func (c *Config) validateTemplates() error {
 	// map to keep track of filters we see
 	filters := map[string]struct{}{}
 
-	for i, t := range c.Templates {
-		parts := strings.Fields(t)
+	for i, template := range c.Templates {
+		parts := strings.Fields(template)
 		// Ensure template string is non-empty
 		if len(parts) == 0 {
 			return fmt.Errorf("missing template at position: %d", i)
@@ -41,10 +37,9 @@ func (c *Config) validateTemplates() error {
 		}
 
 		if len(parts) > 3 {
-			return fmt.Errorf("invalid template format: '%s'", t)
+			return fmt.Errorf("invalid template format: %q", template)
 		}
 
-		template := t
 		filter := ""
 		tags := ""
 		if len(parts) >= 2 {
@@ -70,7 +65,7 @@ func (c *Config) validateTemplates() error {
 
 		// Prevent duplicate filters in the config
 		if _, ok := filters[filter]; ok {
-			return fmt.Errorf("duplicate filter '%s' found at position: %d", filter, i)
+			return fmt.Errorf("duplicate filter %q found at position: %d", filter, i)
 		}
 		filters[filter] = struct{}{}
 
@@ -102,7 +97,7 @@ func (c *Config) validateTemplate(template string) error {
 	}
 
 	if !hasMeasurement {
-		return fmt.Errorf("no measurement in template `%s`", template)
+		return fmt.Errorf("no measurement in template %q", template)
 	}
 
 	return nil
@@ -124,11 +119,11 @@ func (c *Config) validateFilter(filter string) error {
 func (c *Config) validateTag(keyValue string) error {
 	parts := strings.Split(keyValue, "=")
 	if len(parts) != 2 {
-		return fmt.Errorf("invalid template tags: '%s'", keyValue)
+		return fmt.Errorf("invalid template tags: %q", keyValue)
 	}
 
 	if parts[0] == "" || parts[1] == "" {
-		return fmt.Errorf("invalid template tags: %s'", keyValue)
+		return fmt.Errorf("invalid template tags: %q", keyValue)
 	}
 
 	return nil

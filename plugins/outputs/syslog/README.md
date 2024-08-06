@@ -3,14 +3,30 @@
 The syslog output plugin sends syslog messages transmitted over
 [UDP](https://tools.ietf.org/html/rfc5426) or
 [TCP](https://tools.ietf.org/html/rfc6587) or
-[TLS](https://tools.ietf.org/html/rfc5425), with or without the octet counting framing.
+[TLS](https://tools.ietf.org/html/rfc5425), with or without the octet counting
+framing.
 
-Syslog messages are formatted according to
-[RFC 5424](https://tools.ietf.org/html/rfc5424).
+Syslog messages are formatted according to [RFC
+5424](https://tools.ietf.org/html/rfc5424). Per this RFC there are limitations
+to the field sizes when sending messages. See the [Syslog Message Format][]
+section of the RFC. Sending messages beyond these sizes may get dropped by a
+strict receiver silently.
 
-### Configuration
+[Syslog Message Format]: https://datatracker.ietf.org/doc/html/rfc5424#section-6
 
-```toml
+## Global configuration options <!-- @/docs/includes/plugin_config.md -->
+
+In addition to the plugin-specific configuration settings, plugins support
+additional global and plugin configuration settings. These settings are used to
+modify metrics, tags, and field or create aliases and configure ordering, etc.
+See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
+
+[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+
+## Configuration
+
+```toml @sample.conf
+# Configuration for Syslog server to send metrics to
 [[outputs.syslog]]
   ## URL to connect to
   ## ex: address = "tcp://127.0.0.1:8094"
@@ -37,7 +53,7 @@ Syslog messages are formatted according to
 
   ## The framing technique with which it is expected that messages are
   ## transported (default = "octet-counting").  Whether the messages come
-  ## using the octect-counting (RFC5425#section-4.3.1, RFC6587#section-3.4.1),
+  ## using the octet-counting (RFC5425#section-4.3.1, RFC6587#section-3.4.1),
   ## or the non-transparent framing technique (RFC6587#section-3.4.2).  Must
   ## be one of "octet-counting", "non-transparent".
   # framing = "octet-counting"
@@ -88,18 +104,20 @@ Syslog messages are formatted according to
   # default_appname = "Telegraf"
 ```
 
-### Metric mapping
+## Metric mapping
+
 The output plugin expects syslog metrics tags and fields to match up with the
 ones created in the [syslog input][].
 
-The following table shows the metric tags, field and defaults used to format syslog messages.
+The following table shows the metric tags, field and defaults used to format
+syslog messages.
 
 | Syslog field | Metric Tag | Metric Field | Default value |
 | --- | --- | --- | --- |
 | APP-NAME | appname | - | default_appname = "Telegraf" |
 | TIMESTAMP | - | timestamp | Metric's own timestamp |
 | VERSION | - | version | 1 |
-| PRI | - | serverity_code + (8 * facility_code)| default_severity_code=5 (notice), default_facility_code=1 (user-level)|
+| PRI | - | severity_code + (8 * facility_code)| default_severity_code=5 (notice), default_facility_code=1 (user-level)|
 | HOSTNAME | hostname OR source OR host | - | os.Hostname() |
 | MSGID | - | msgid | Metric name |
 | PROCID | - | procid | - |

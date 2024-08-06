@@ -7,15 +7,17 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/influxdata/telegraf/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/influxdata/telegraf/testutil"
 )
 
 func TestMarklogic(t *testing.T) {
 	// Create a test server with the const response JSON
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, response)
+		_, err := fmt.Fprintln(w, response)
+		require.NoError(t, err)
 	}))
 	defer ts.Close()
 
@@ -27,7 +29,7 @@ func TestMarklogic(t *testing.T) {
 
 	ml := &Marklogic{
 		Hosts: []string{"example1"},
-		URL:   string(ts.URL),
+		URL:   ts.URL,
 		//Sources: []string{"http://localhost:8002/manage/v2/hosts/hostname1?view=status&format=json"},
 	}
 
@@ -76,7 +78,6 @@ func TestMarklogic(t *testing.T) {
 	}
 
 	acc.AssertContainsTaggedFields(t, "marklogic", expectFields, expectTags)
-
 }
 
 var response = `

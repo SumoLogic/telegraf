@@ -3,36 +3,35 @@ package ecs
 import (
 	"bytes"
 	"errors"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
 	"testing"
 
 	"github.com/docker/docker/api/types"
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type pollMock struct {
 	task  func() (*Task, error)
-	stats func() (map[string]types.StatsJSON, error)
+	stats func() (map[string]*types.StatsJSON, error)
 }
 
 func (p *pollMock) Task() (*Task, error) {
 	return p.task()
 }
 
-func (p *pollMock) ContainerStats() (map[string]types.StatsJSON, error) {
+func (p *pollMock) ContainerStats() (map[string]*types.StatsJSON, error) {
 	return p.stats()
 }
 
 func TestEcsClient_PollSync(t *testing.T) {
-
 	tests := []struct {
 		name    string
 		mock    *pollMock
 		want    *Task
-		want1   map[string]types.StatsJSON
+		want1   map[string]*types.StatsJSON
 		wantErr bool
 	}{
 		{
@@ -41,7 +40,7 @@ func TestEcsClient_PollSync(t *testing.T) {
 				task: func() (*Task, error) {
 					return &validMeta, nil
 				},
-				stats: func() (map[string]types.StatsJSON, error) {
+				stats: func() (map[string]*types.StatsJSON, error) {
 					return validStats, nil
 				},
 			},
@@ -54,7 +53,7 @@ func TestEcsClient_PollSync(t *testing.T) {
 				task: func() (*Task, error) {
 					return nil, errors.New("err")
 				},
-				stats: func() (map[string]types.StatsJSON, error) {
+				stats: func() (map[string]*types.StatsJSON, error) {
 					return validStats, nil
 				},
 			},
@@ -66,7 +65,7 @@ func TestEcsClient_PollSync(t *testing.T) {
 				task: func() (*Task, error) {
 					return &validMeta, nil
 				},
-				stats: func() (map[string]types.StatsJSON, error) {
+				stats: func() (map[string]*types.StatsJSON, error) {
 					return nil, errors.New("err")
 				},
 			},
@@ -81,22 +80,21 @@ func TestEcsClient_PollSync(t *testing.T) {
 				t.Errorf("EcsClient.PollSync() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			assert.Equal(t, tt.want, got, "EcsClient.PollSync() got = %v, want %v", got, tt.want)
-			assert.Equal(t, tt.want1, got1, "EcsClient.PollSync() got1 = %v, want %v", got1, tt.want1)
+			require.Equal(t, tt.want, got, "EcsClient.PollSync() got = %v, want %v", got, tt.want)
+			require.Equal(t, tt.want1, got1, "EcsClient.PollSync() got1 = %v, want %v", got1, tt.want1)
 		})
 	}
 }
 
 type mockDo struct {
-	do func(req *http.Request) (*http.Response, error)
+	do func() (*http.Response, error)
 }
 
-func (m mockDo) Do(req *http.Request) (*http.Response, error) {
-	return m.do(req)
+func (m mockDo) Do(*http.Request) (*http.Response, error) {
+	return m.do()
 }
 
 func TestEcsClient_Task(t *testing.T) {
-	rc, _ := os.Open("testdata/metadata.golden")
 	tests := []struct {
 		name    string
 		client  httpClient
@@ -106,10 +104,14 @@ func TestEcsClient_Task(t *testing.T) {
 		{
 			name: "happy",
 			client: mockDo{
-				do: func(req *http.Request) (*http.Response, error) {
+				do: func() (*http.Response, error) {
+					rc, err := os.Open("testdata/metadata.golden")
+					if err != nil {
+						return nil, err
+					}
 					return &http.Response{
 						StatusCode: http.StatusOK,
-						Body:       ioutil.NopCloser(rc),
+						Body:       io.NopCloser(rc),
 					}, nil
 				},
 			},
@@ -118,7 +120,7 @@ func TestEcsClient_Task(t *testing.T) {
 		{
 			name: "do err",
 			client: mockDo{
-				do: func(req *http.Request) (*http.Response, error) {
+				do: func() (*http.Response, error) {
 					return nil, errors.New("err")
 				},
 			},
@@ -127,10 +129,10 @@ func TestEcsClient_Task(t *testing.T) {
 		{
 			name: "malformed 500 resp",
 			client: mockDo{
-				do: func(req *http.Request) (*http.Response, error) {
+				do: func() (*http.Response, error) {
 					return &http.Response{
 						StatusCode: http.StatusInternalServerError,
-						Body:       ioutil.NopCloser(bytes.NewReader([]byte("foo"))),
+						Body:       io.NopCloser(bytes.NewReader([]byte("foo"))),
 					}, nil
 				},
 			},
@@ -139,10 +141,10 @@ func TestEcsClient_Task(t *testing.T) {
 		{
 			name: "malformed 200 resp",
 			client: mockDo{
-				do: func(req *http.Request) (*http.Response, error) {
+				do: func() (*http.Response, error) {
 					return &http.Response{
 						StatusCode: http.StatusOK,
-						Body:       ioutil.NopCloser(bytes.NewReader([]byte("foo"))),
+						Body:       io.NopCloser(bytes.NewReader([]byte("foo"))),
 					}, nil
 				},
 			},
@@ -161,26 +163,29 @@ func TestEcsClient_Task(t *testing.T) {
 				t.Errorf("EcsClient.Task() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			assert.Equal(t, tt.want, got, "EcsClient.Task() = %v, want %v", got, tt.want)
+			require.Equal(t, tt.want, got, "EcsClient.Task() = %v, want %v", got, tt.want)
 		})
 	}
 }
 
 func TestEcsClient_ContainerStats(t *testing.T) {
-	rc, _ := os.Open("testdata/stats.golden")
 	tests := []struct {
 		name    string
 		client  httpClient
-		want    map[string]types.StatsJSON
+		want    map[string]*types.StatsJSON
 		wantErr bool
 	}{
 		{
 			name: "happy",
 			client: mockDo{
-				do: func(req *http.Request) (*http.Response, error) {
+				do: func() (*http.Response, error) {
+					rc, err := os.Open("testdata/stats.golden")
+					if err != nil {
+						return nil, err
+					}
 					return &http.Response{
 						StatusCode: http.StatusOK,
-						Body:       ioutil.NopCloser(rc),
+						Body:       io.NopCloser(rc),
 					}, nil
 				},
 			},
@@ -189,33 +194,33 @@ func TestEcsClient_ContainerStats(t *testing.T) {
 		{
 			name: "do err",
 			client: mockDo{
-				do: func(req *http.Request) (*http.Response, error) {
+				do: func() (*http.Response, error) {
 					return nil, errors.New("err")
 				},
 			},
-			want:    map[string]types.StatsJSON{},
+			want:    nil,
 			wantErr: true,
 		},
 		{
 			name: "malformed 200 resp",
 			client: mockDo{
-				do: func(req *http.Request) (*http.Response, error) {
+				do: func() (*http.Response, error) {
 					return &http.Response{
 						StatusCode: http.StatusOK,
-						Body:       ioutil.NopCloser(bytes.NewReader([]byte("foo"))),
+						Body:       io.NopCloser(bytes.NewReader([]byte("foo"))),
 					}, nil
 				},
 			},
-			want:    map[string]types.StatsJSON{},
+			want:    nil,
 			wantErr: true,
 		},
 		{
 			name: "malformed 500 resp",
 			client: mockDo{
-				do: func(req *http.Request) (*http.Response, error) {
+				do: func() (*http.Response, error) {
 					return &http.Response{
 						StatusCode: http.StatusInternalServerError,
-						Body:       ioutil.NopCloser(bytes.NewReader([]byte("foo"))),
+						Body:       io.NopCloser(bytes.NewReader([]byte("foo"))),
 					}, nil
 				},
 			},
@@ -235,7 +240,7 @@ func TestEcsClient_ContainerStats(t *testing.T) {
 				t.Errorf("EcsClient.ContainerStats() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			assert.Equal(t, tt.want, got, "EcsClient.ContainerStats() = %v, want %v", got, tt.want)
+			require.Equal(t, tt.want, got, "EcsClient.ContainerStats() = %v, want %v", got, tt.want)
 		})
 	}
 }
@@ -269,10 +274,10 @@ func TestResolveTaskURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			baseURL, err := url.Parse(tt.base)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			act := resolveTaskURL(baseURL, tt.ver)
-			assert.Equal(t, tt.exp, act)
+			require.Equal(t, tt.exp, act)
 		})
 	}
 }
@@ -306,10 +311,10 @@ func TestResolveStatsURL(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			baseURL, err := url.Parse(tt.base)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 
 			act := resolveStatsURL(baseURL, tt.ver)
-			assert.Equal(t, tt.exp, act)
+			require.Equal(t, tt.exp, act)
 		})
 	}
 }

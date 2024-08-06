@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/ericchiang/k8s/apis/core/v1"
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/influxdata/telegraf"
 )
@@ -15,17 +15,14 @@ func collectPersistentVolumes(ctx context.Context, acc telegraf.Accumulator, ki 
 		acc.AddError(err)
 		return
 	}
-	for _, pv := range list.Items {
-		if err = ki.gatherPersistentVolume(*pv, acc); err != nil {
-			acc.AddError(err)
-			return
-		}
+	for i := range list.Items {
+		ki.gatherPersistentVolume(&list.Items[i], acc)
 	}
 }
 
-func (ki *KubernetesInventory) gatherPersistentVolume(pv v1.PersistentVolume, acc telegraf.Accumulator) error {
+func (ki *KubernetesInventory) gatherPersistentVolume(pv *corev1.PersistentVolume, acc telegraf.Accumulator) {
 	phaseType := 5
-	switch strings.ToLower(pv.Status.GetPhase()) {
+	switch strings.ToLower(string(pv.Status.Phase)) {
 	case "bound":
 		phaseType = 0
 	case "failed":
@@ -41,12 +38,10 @@ func (ki *KubernetesInventory) gatherPersistentVolume(pv v1.PersistentVolume, ac
 		"phase_type": phaseType,
 	}
 	tags := map[string]string{
-		"pv_name":      pv.Metadata.GetName(),
-		"phase":        pv.Status.GetPhase(),
-		"storageclass": pv.Spec.GetStorageClassName(),
+		"pv_name":      pv.Name,
+		"phase":        string(pv.Status.Phase),
+		"storageclass": pv.Spec.StorageClassName,
 	}
 
 	acc.AddFields(persistentVolumeMeasurement, fields, tags)
-
-	return nil
 }

@@ -5,35 +5,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/internal"
-	"github.com/influxdata/telegraf/testutil"
 	"github.com/newrelic/newrelic-telemetry-sdk-go/telemetry"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/config"
+	"github.com/influxdata/telegraf/testutil"
 )
 
 func TestBasic(t *testing.T) {
 	nr := &NewRelic{
 		MetricPrefix: "Test",
 		InsightsKey:  "12345",
-		Timeout:      internal.Duration{Duration: time.Second * 5},
-	}
-	if testing.Short() {
-		t.Skip("skipping test in short mode.")
+		Timeout:      config.Duration(time.Second * 5),
 	}
 
 	err := nr.Connect()
 	require.NoError(t, err)
 
 	err = nr.Write(testutil.MockMetrics())
-	assert.Contains(t, err.Error(), "unable to harvest metrics")
+	require.Contains(t, err.Error(), "unable to harvest metrics")
 }
 
 func TestNewRelic_Write(t *testing.T) {
-	type args struct {
-		metrics []telegraf.Metric
-	}
 	tests := []struct {
 		name         string
 		metrics      []telegraf.Metric
@@ -91,8 +85,9 @@ func TestNewRelic_Write(t *testing.T) {
 			metrics: []telegraf.Metric{
 				testutil.TestMetric(math.MaxFloat64, "test_maxfloat64"),
 			},
-			wantErr:      false,
-			auditMessage: `"metrics":[{"name":"test_maxfloat64.value","type":"gauge","value":1.7976931348623157e+308,"timestamp":1257894000000,"attributes":{"tag1":"value1"}}]`,
+			wantErr: false,
+			auditMessage: `"metrics":[{"name":"test_maxfloat64.value","type":"gauge","value":1.7976931348623157e+308,` +
+				`"timestamp":1257894000000,"attributes":{"tag1":"value1"}}]`,
 		},
 		{
 			name: "Test: Test NAN ",
@@ -107,7 +102,8 @@ func TestNewRelic_Write(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var auditLog map[string]interface{}
 			nr := &NewRelic{}
-			nr.harvestor, _ = telemetry.NewHarvester(
+			var err error
+			nr.harvestor, err = telemetry.NewHarvester(
 				telemetry.ConfigHarvestPeriod(0),
 				func(cfg *telemetry.Config) {
 					cfg.APIKey = "dummyTestKey"
@@ -117,12 +113,13 @@ func TestNewRelic_Write(t *testing.T) {
 						auditLog = e
 					}
 				})
-			err := nr.Write(tt.metrics)
-			assert.NoError(t, err)
+			require.NoError(t, err)
+			err = nr.Write(tt.metrics)
+			require.NoError(t, err)
 			if auditLog["data"] != nil {
-				assert.Contains(t, auditLog["data"], tt.auditMessage)
+				require.Contains(t, auditLog["data"], tt.auditMessage)
 			} else {
-				assert.Contains(t, "", tt.auditMessage)
+				require.Contains(t, "", tt.auditMessage)
 			}
 
 			if (err != nil) != tt.wantErr {
@@ -164,7 +161,23 @@ func TestNewRelic_Connect(t *testing.T) {
 			name: "Test: Insights key and Timeout",
 			newrelic: &NewRelic{
 				InsightsKey: "12312133",
-				Timeout:     internal.Duration{Duration: time.Second * 5},
+				Timeout:     config.Duration(time.Second * 5),
+			},
+			wantErr: false,
+		},
+		{
+			name: "Test: HTTP Proxy",
+			newrelic: &NewRelic{
+				InsightsKey: "12121212",
+				HTTPProxy:   "https://my.proxy",
+			},
+			wantErr: false,
+		},
+		{
+			name: "Test: Metric URL ",
+			newrelic: &NewRelic{
+				InsightsKey: "12121212",
+				MetricURL:   "https://test.nr.com",
 			},
 			wantErr: false,
 		},

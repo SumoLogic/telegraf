@@ -7,9 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/influxdata/telegraf"
 	dto "github.com/prometheus/client_model/go"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/influxdata/telegraf"
 )
 
 const helpString = "Telegraf collected metric"
@@ -144,7 +145,7 @@ func (c *Collection) createLabels(metric telegraf.Metric) []LabelPair {
 		labels = append(labels, LabelPair{Name: name, Value: tag.Value})
 	}
 
-	if c.config.StringHandling != StringAsLabel {
+	if !c.config.StringAsLabel {
 		return labels
 	}
 
@@ -168,7 +169,6 @@ func (c *Collection) createLabels(metric telegraf.Metric) []LabelPair {
 
 		labels = append(labels, LabelPair{Name: name, Value: value})
 		addedFieldLabel = true
-
 	}
 
 	if addedFieldLabel {
@@ -188,10 +188,11 @@ func (c *Collection) Add(metric telegraf.Metric, now time.Time) {
 		if !ok {
 			continue
 		}
+		metricType := c.config.TypeMappings.DetermineType(metricName, metric)
 
 		family := MetricFamily{
 			Name: metricName,
-			Type: metric.Type(),
+			Type: metricType,
 		}
 
 		entry, ok := c.Entries[family]
@@ -201,7 +202,6 @@ func (c *Collection) Add(metric telegraf.Metric, now time.Time) {
 				Metrics: make(map[MetricKey]*Metric),
 			}
 			c.Entries[family] = entry
-
 		}
 
 		metricKey := MakeMetricKey(labels)
@@ -243,6 +243,9 @@ func (c *Collection) Add(metric telegraf.Metric, now time.Time) {
 					AddTime:   now,
 					Histogram: &Histogram{},
 				}
+			} else {
+				m.Time = metric.Time()
+				m.AddTime = now
 			}
 			switch {
 			case strings.HasSuffix(field.Key, "_bucket"):
@@ -291,6 +294,9 @@ func (c *Collection) Add(metric telegraf.Metric, now time.Time) {
 					AddTime: now,
 					Summary: &Summary{},
 				}
+			} else {
+				m.Time = metric.Time()
+				m.AddTime = now
 			}
 			switch {
 			case strings.HasSuffix(field.Key, "_sum"):
@@ -347,14 +353,13 @@ func (c *Collection) Expire(now time.Time, age time.Duration) {
 	}
 }
 
-func (c *Collection) GetEntries(order MetricSortOrder) []Entry {
+func (c *Collection) GetEntries() []Entry {
 	entries := make([]Entry, 0, len(c.Entries))
 	for _, entry := range c.Entries {
 		entries = append(entries, entry)
 	}
 
-	switch order {
-	case SortMetrics:
+	if c.config.SortMetrics {
 		sort.Slice(entries, func(i, j int) bool {
 			lhs := entries[i].Family
 			rhs := entries[j].Family
@@ -368,14 +373,13 @@ func (c *Collection) GetEntries(order MetricSortOrder) []Entry {
 	return entries
 }
 
-func (c *Collection) GetMetrics(entry Entry, order MetricSortOrder) []*Metric {
+func (c *Collection) GetMetrics(entry Entry) []*Metric {
 	metrics := make([]*Metric, 0, len(entry.Metrics))
 	for _, metric := range entry.Metrics {
 		metrics = append(metrics, metric)
 	}
 
-	switch order {
-	case SortMetrics:
+	if c.config.SortMetrics {
 		sort.Slice(metrics, func(i, j int) bool {
 			lhs := metrics[i].Labels
 			rhs := metrics[j].Labels
@@ -406,14 +410,17 @@ func (c *Collection) GetMetrics(entry Entry, order MetricSortOrder) []*Metric {
 func (c *Collection) GetProto() []*dto.MetricFamily {
 	result := make([]*dto.MetricFamily, 0, len(c.Entries))
 
-	for _, entry := range c.GetEntries(c.config.MetricSortOrder) {
+	for _, entry := range c.GetEntries() {
 		mf := &dto.MetricFamily{
 			Name: proto.String(entry.Family.Name),
-			Help: proto.String(helpString),
 			Type: MetricType(entry.Family.Type),
 		}
 
-		for _, metric := range c.GetMetrics(entry, c.config.MetricSortOrder) {
+		if !c.config.CompactEncoding {
+			mf.Help = proto.String(helpString)
+		}
+
+		for _, metric := range c.GetMetrics(entry) {
 			l := make([]*dto.LabelPair, 0, len(metric.Labels))
 			for _, label := range metric.Labels {
 				l = append(l, &dto.LabelPair{
@@ -426,7 +433,7 @@ func (c *Collection) GetProto() []*dto.MetricFamily {
 				Label: l,
 			}
 
-			if c.config.TimestampExport == ExportTimestamp {
+			if c.config.ExportTimestamp {
 				m.TimestampMs = proto.Int64(metric.Time.UnixNano() / int64(time.Millisecond))
 			}
 

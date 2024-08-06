@@ -1,9 +1,10 @@
-// +build linux
+//go:build linux
 
 package synproxy
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -62,7 +63,7 @@ func (k *Synproxy) getSynproxyStat() (map[string]interface{}, error) {
 		}
 	}
 	if len(hname) == 0 {
-		return nil, fmt.Errorf("invalid data")
+		return nil, errors.New("invalid data")
 	}
 	// Read data rows
 	for scanner.Scan() {
@@ -79,7 +80,7 @@ func (k *Synproxy) getSynproxyStat() (map[string]interface{}, error) {
 			x, err := strconv.ParseUint(val, 16, 32)
 			// If field is not a valid hexstring
 			if err != nil {
-				return nil, fmt.Errorf("invalid value '%s' found", val)
+				return nil, fmt.Errorf("invalid value %q found", val)
 			}
 			if hname[i] != "" {
 				fields[hname[i]] = fields[hname[i]].(uint32) + uint32(x)

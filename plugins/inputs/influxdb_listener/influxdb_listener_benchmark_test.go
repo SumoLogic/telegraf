@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/influxdata/telegraf/internal"
+	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/selfstat"
 	"github.com/influxdata/telegraf/testutil"
 )
@@ -20,9 +20,7 @@ func newListener() *InfluxDBListener {
 		acc:          &testutil.NopAccumulator{},
 		bytesRecv:    selfstat.Register("influxdb_listener", "bytes_received", map[string]string{}),
 		writesServed: selfstat.Register("influxdb_listener", "writes_served", map[string]string{}),
-		MaxBodySize: internal.Size{
-			Size: defaultMaxBodySize,
-		},
+		MaxBodySize:  config.Size(defaultMaxBodySize),
 	}
 	return listener
 }
@@ -85,23 +83,23 @@ func BenchmarkInfluxDBListener_serveWrite(b *testing.B) {
 }
 
 func lines(lines, numTags, numFields int) string {
-	lp := make([]string, lines)
+	lp := make([]string, 0, lines)
 	for i := 0; i < lines; i++ {
-		tags := make([]string, numTags)
+		tags := make([]string, 0, numTags)
 		for j := 0; j < numTags; j++ {
-			tags[j] = fmt.Sprintf("t%d=v%d", j, j)
+			tags = append(tags, fmt.Sprintf("t%d=v%d", j, j))
 		}
 
-		fields := make([]string, numFields)
+		fields := make([]string, 0, numFields)
 		for k := 0; k < numFields; k++ {
-			fields[k] = fmt.Sprintf("f%d=%d", k, k)
+			fields = append(fields, fmt.Sprintf("f%d=%d", k, k))
 		}
 
-		lp[i] = fmt.Sprintf("m%d,%s %s",
+		lp = append(lp, fmt.Sprintf("m%d,%s %s",
 			i,
 			strings.Join(tags, ","),
 			strings.Join(fields, ","),
-		)
+		))
 	}
 
 	return strings.Join(lp, "\n")

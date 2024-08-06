@@ -3,17 +3,20 @@ package grok
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/metric"
 	"github.com/vjeantet/grok"
+
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/internal"
+	"github.com/influxdata/telegraf/metric"
+	"github.com/influxdata/telegraf/plugins/parsers"
 )
 
 var timeLayouts = map[string]string{
@@ -38,18 +41,18 @@ var timeLayouts = map[string]string{
 }
 
 const (
-	MEASUREMENT       = "measurement"
-	INT               = "int"
-	TAG               = "tag"
-	FLOAT             = "float"
-	STRING            = "string"
-	DURATION          = "duration"
-	DROP              = "drop"
-	EPOCH             = "EPOCH"
-	EPOCH_MILLI       = "EPOCH_MILLI"
-	EPOCH_NANO        = "EPOCH_NANO"
-	SYSLOG_TIMESTAMP  = "SYSLOG_TIMESTAMP"
-	GENERIC_TIMESTAMP = "GENERIC_TIMESTAMP"
+	Measurement      = "measurement"
+	Int              = "int"
+	Tag              = "tag"
+	Float            = "float"
+	String           = "string"
+	Duration         = "duration"
+	Drop             = "drop"
+	Epoch            = "EPOCH"
+	EpochMilli       = "EPOCH_MILLI"
+	EpochNano        = "EPOCH_NANO"
+	SyslogTimestamp  = "SYSLOG_TIMESTAMP"
+	GenericTimestamp = "GENERIC_TIMESTAMP"
 )
 
 var (
@@ -66,16 +69,18 @@ var (
 
 // Parser is the primary struct to handle and grok-patterns defined in the config toml
 type Parser struct {
-	Patterns []string
+	Patterns []string `toml:"grok_patterns"`
 	// namedPatterns is a list of internally-assigned names to the patterns
 	// specified by the user in Patterns.
 	// They will look like:
 	//   GROK_INTERNAL_PATTERN_0, GROK_INTERNAL_PATTERN_1, etc.
-	NamedPatterns      []string
-	CustomPatterns     string
-	CustomPatternFiles []string
-	Measurement        string
-	DefaultTags        map[string]string
+	NamedPatterns      []string          `toml:"grok_named_patterns"`
+	CustomPatterns     string            `toml:"grok_custom_patterns"`
+	CustomPatternFiles []string          `toml:"grok_custom_pattern_files"`
+	Multiline          bool              `toml:"grok_multiline"`
+	Measurement        string            `toml:"-"`
+	DefaultTags        map[string]string `toml:"-"`
+	Log                telegraf.Logger   `toml:"-"`
 
 	// Timezone is an optional component to help render log dates to
 	// your chosen zone.
@@ -84,11 +89,11 @@ type Parser struct {
 	// 1. Local             -- interpret based on machine localtime
 	// 2. "America/Chicago" -- Unix TZ values like those found in https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 	// 3. UTC               -- or blank/unspecified, will return timestamp in UTC
-	Timezone string
+	Timezone string `toml:"grok_timezone"`
 	loc      *time.Location
 
 	// UniqueTimestamp when set to "disable", timestamp will not incremented if there is a duplicate.
-	UniqueTimestamp string
+	UniqueTimestamp string `toml:"grok_unique_timestamp"`
 
 	// typeMap is a map of patterns -> capture name -> modifier,
 	//   ie, {
@@ -107,13 +112,13 @@ type Parser struct {
 	//             }
 	//       }
 	tsMap map[string]map[string]string
-	// patterns is a map of all of the parsed patterns from CustomPatterns
+	// patternsMap is a map of all of the parsed patterns from CustomPatterns
 	// and CustomPatternFiles.
 	//   ie, {
 	//          "DURATION":      "%{NUMBER}[nuµm]?s"
 	//          "RESPONSE_CODE": "%{NUMBER:rc:tag}"
 	//       }
-	patterns map[string]string
+	patternsMap map[string]string
 	// foundTsLayouts is a slice of timestamp patterns that have been found
 	// in the log lines. This slice gets updated if the user uses the generic
 	// 'ts' modifier for timestamps. This slice is checked first for matches,
@@ -130,7 +135,7 @@ type Parser struct {
 func (p *Parser) Compile() error {
 	p.typeMap = make(map[string]map[string]string)
 	p.tsMap = make(map[string]map[string]string)
-	p.patterns = make(map[string]string)
+	p.patternsMap = make(map[string]string)
 	p.tsModder = &tsModder{}
 	var err error
 	p.g, err = grok.NewWithConfig(&grok.Config{NamedCapturesOnly: true})
@@ -156,12 +161,12 @@ func (p *Parser) Compile() error {
 	}
 
 	if len(p.NamedPatterns) == 0 {
-		return fmt.Errorf("pattern required")
+		return errors.New("pattern required")
 	}
 
 	// Combine user-supplied CustomPatterns with DEFAULT_PATTERNS and parse
 	// them together as the same type of pattern.
-	p.CustomPatterns = DEFAULT_PATTERNS + p.CustomPatterns
+	p.CustomPatterns = DefaultPatterns + p.CustomPatterns
 	if len(p.CustomPatterns) != 0 {
 		scanner := bufio.NewScanner(strings.NewReader(p.CustomPatterns))
 		p.addCustomPatterns(scanner)
@@ -180,8 +185,8 @@ func (p *Parser) Compile() error {
 
 	p.loc, err = time.LoadLocation(p.Timezone)
 	if err != nil {
-		log.Printf("W! improper timezone supplied (%s), setting loc to UTC", p.Timezone)
-		p.loc, _ = time.LoadLocation("UTC")
+		p.Log.Warnf("Improper timezone supplied (%s), setting loc to UTC", p.Timezone)
+		p.loc = time.UTC
 	}
 
 	if p.timeFunc == nil {
@@ -209,7 +214,7 @@ func (p *Parser) ParseLine(line string) (telegraf.Metric, error) {
 	}
 
 	if len(values) == 0 {
-		log.Printf("D! Grok no match found for: %q", line)
+		p.Log.Debugf("Grok no match found for or no data extracted from: %q", line)
 		return nil, nil
 	}
 
@@ -243,91 +248,91 @@ func (p *Parser) ParseLine(line string) (telegraf.Metric, error) {
 		}
 		// if we didn't find a type OR timestamp modifier, assume string
 		if t == "" {
-			t = STRING
+			t = String
 		}
 
 		switch t {
-		case MEASUREMENT:
+		case Measurement:
 			p.Measurement = v
-		case INT:
+		case Int:
 			iv, err := strconv.ParseInt(v, 0, 64)
 			if err != nil {
-				log.Printf("E! Error parsing %s to int: %s", v, err)
+				p.Log.Errorf("Error parsing %s to int: %s", v, err)
 			} else {
 				fields[k] = iv
 			}
-		case FLOAT:
+		case Float:
 			fv, err := strconv.ParseFloat(v, 64)
 			if err != nil {
-				log.Printf("E! Error parsing %s to float: %s", v, err)
+				p.Log.Errorf("Error parsing %s to float: %s", v, err)
 			} else {
 				fields[k] = fv
 			}
-		case DURATION:
+		case Duration:
 			d, err := time.ParseDuration(v)
 			if err != nil {
-				log.Printf("E! Error parsing %s to duration: %s", v, err)
+				p.Log.Errorf("Error parsing %s to duration: %s", v, err)
 			} else {
 				fields[k] = int64(d)
 			}
-		case TAG:
+		case Tag:
 			tags[k] = v
-		case STRING:
+		case String:
 			fields[k] = v
-		case EPOCH:
+		case Epoch:
 			parts := strings.SplitN(v, ".", 2)
 			if len(parts) == 0 {
-				log.Printf("E! Error parsing %s to timestamp: %s", v, err)
+				p.Log.Errorf("Error parsing %s to timestamp: %s", v, err)
 				break
 			}
 
 			sec, err := strconv.ParseInt(parts[0], 10, 64)
 			if err != nil {
-				log.Printf("E! Error parsing %s to timestamp: %s", v, err)
+				p.Log.Errorf("Error parsing %s to timestamp: %s", v, err)
 				break
 			}
 			ts := time.Unix(sec, 0)
 
 			if len(parts) == 2 {
 				padded := fmt.Sprintf("%-9s", parts[1])
-				nsString := strings.Replace(padded[:9], " ", "0", -1)
+				nsString := strings.ReplaceAll(padded[:9], " ", "0")
 				nanosec, err := strconv.ParseInt(nsString, 10, 64)
 				if err != nil {
-					log.Printf("E! Error parsing %s to timestamp: %s", v, err)
+					p.Log.Errorf("Error parsing %s to timestamp: %s", v, err)
 					break
 				}
 				ts = ts.Add(time.Duration(nanosec) * time.Nanosecond)
 			}
 			timestamp = ts
-		case EPOCH_MILLI:
+		case EpochMilli:
 			ms, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
-				log.Printf("E! Error parsing %s to int: %s", v, err)
+				p.Log.Errorf("Error parsing %s to int: %s", v, err)
 			} else {
 				timestamp = time.Unix(0, ms*int64(time.Millisecond))
 			}
-		case EPOCH_NANO:
+		case EpochNano:
 			iv, err := strconv.ParseInt(v, 10, 64)
 			if err != nil {
-				log.Printf("E! Error parsing %s to int: %s", v, err)
+				p.Log.Errorf("Error parsing %s to int: %s", v, err)
 			} else {
 				timestamp = time.Unix(0, iv)
 			}
-		case SYSLOG_TIMESTAMP:
-			ts, err := time.ParseInLocation(time.Stamp, v, p.loc)
+		case SyslogTimestamp:
+			ts, err := internal.ParseTimestamp(time.Stamp, v, p.loc)
 			if err == nil {
 				if ts.Year() == 0 {
 					ts = ts.AddDate(timestamp.Year(), 0, 0)
 				}
 				timestamp = ts
 			} else {
-				log.Printf("E! Error parsing %s to time layout [%s]: %s", v, t, err)
+				p.Log.Errorf("Error parsing %s to time layout [%s]: %s", v, t, err)
 			}
-		case GENERIC_TIMESTAMP:
+		case GenericTimestamp:
 			var foundTs bool
 			// first try timestamp layouts that we've already found
 			for _, layout := range p.foundTsLayouts {
-				ts, err := time.ParseInLocation(layout, v, p.loc)
+				ts, err := internal.ParseTimestamp(layout, v, p.loc)
 				if err == nil {
 					timestamp = ts
 					foundTs = true
@@ -338,7 +343,7 @@ func (p *Parser) ParseLine(line string) (telegraf.Metric, error) {
 			// layouts.
 			if !foundTs {
 				for _, layout := range timeLayouts {
-					ts, err := time.ParseInLocation(layout, v, p.loc)
+					ts, err := internal.ParseTimestamp(layout, v, p.loc)
 					if err == nil {
 						timestamp = ts
 						foundTs = true
@@ -350,35 +355,45 @@ func (p *Parser) ParseLine(line string) (telegraf.Metric, error) {
 			// if we still haven't found a timestamp layout, log it and we will
 			// just use time.Now()
 			if !foundTs {
-				log.Printf("E! Error parsing timestamp [%s], could not find any "+
+				p.Log.Errorf("Error parsing timestamp [%s], could not find any "+
 					"suitable time layouts.", v)
 			}
-		case DROP:
+		case Drop:
 		// goodbye!
 		default:
-			v = strings.Replace(v, ",", ".", -1)
-			ts, err := time.ParseInLocation(t, v, p.loc)
+			v = strings.ReplaceAll(v, ",", ".")
+			ts, err := internal.ParseTimestamp(t, v, p.loc)
 			if err == nil {
 				if ts.Year() == 0 {
 					ts = ts.AddDate(timestamp.Year(), 0, 0)
 				}
 				timestamp = ts
 			} else {
-				log.Printf("E! Error parsing %s to time layout [%s]: %s", v, t, err)
+				p.Log.Errorf("Error parsing %s to time layout [%s]: %s", v, t, err)
 			}
 		}
 	}
 
 	if p.UniqueTimestamp != "auto" {
-		return metric.New(p.Measurement, tags, fields, timestamp)
+		return metric.New(p.Measurement, tags, fields, timestamp), nil
 	}
 
-	return metric.New(p.Measurement, tags, fields, p.tsModder.tsMod(timestamp))
+	return metric.New(p.Measurement, tags, fields, p.tsModder.tsMod(timestamp)), nil
 }
 
 func (p *Parser) Parse(buf []byte) ([]telegraf.Metric, error) {
-
 	metrics := make([]telegraf.Metric, 0)
+
+	if p.Multiline {
+		m, err := p.ParseLine(string(buf))
+		if err != nil {
+			return nil, err
+		}
+		if m != nil {
+			metrics = append(metrics, m)
+		}
+		return metrics, nil
+	}
 
 	scanner := bufio.NewScanner(bytes.NewReader(buf))
 	for scanner.Scan() {
@@ -406,7 +421,7 @@ func (p *Parser) addCustomPatterns(scanner *bufio.Scanner) {
 		line := strings.TrimSpace(scanner.Text())
 		if len(line) > 0 && line[0] != '#' {
 			names := strings.SplitN(line, " ", 2)
-			p.patterns[names[0]] = names[1]
+			p.patternsMap[names[0]] = names[1]
 		}
 	}
 }
@@ -416,37 +431,38 @@ func (p *Parser) compileCustomPatterns() error {
 	// check if the pattern contains a subpattern that is already defined
 	// replace it with the subpattern for modifier inheritance.
 	for i := 0; i < 2; i++ {
-		for name, pattern := range p.patterns {
+		for name, pattern := range p.patternsMap {
 			subNames := patternOnlyRe.FindAllStringSubmatch(pattern, -1)
 			for _, subName := range subNames {
-				if subPattern, ok := p.patterns[subName[1]]; ok {
+				if subPattern, ok := p.patternsMap[subName[1]]; ok {
 					pattern = strings.Replace(pattern, subName[0], subPattern, 1)
 				}
 			}
-			p.patterns[name] = pattern
+			p.patternsMap[name] = pattern
 		}
 	}
 
 	// check if pattern contains modifiers. Parse them out if it does.
-	for name, pattern := range p.patterns {
+	for name, pattern := range p.patternsMap {
 		if modifierRe.MatchString(pattern) {
 			// this pattern has modifiers, so parse out the modifiers
 			pattern, err = p.parseTypedCaptures(name, pattern)
 			if err != nil {
 				return err
 			}
-			p.patterns[name] = pattern
+			p.patternsMap[name] = pattern
 		}
 	}
 
-	return p.g.AddPatternsFromMap(p.patterns)
+	return p.g.AddPatternsFromMap(p.patternsMap)
 }
 
 // parseTypedCaptures parses the capture modifiers, and then deletes the
 // modifier from the line so that it is a valid "grok" pattern again.
-//   ie,
-//     %{NUMBER:bytes:int}      => %{NUMBER:bytes}      (stores %{NUMBER}->bytes->int)
-//     %{IPORHOST:clientip:tag} => %{IPORHOST:clientip} (stores %{IPORHOST}->clientip->tag)
+//
+//	ie,
+//	  %{NUMBER:bytes:int}      => %{NUMBER:bytes}      (stores %{NUMBER}->bytes->int)
+//	  %{IPORHOST:clientip:tag} => %{IPORHOST:clientip} (stores %{IPORHOST}->clientip->tag)
 func (p *Parser) parseTypedCaptures(name, pattern string) (string, error) {
 	matches := modifierRe.FindAllStringSubmatch(pattern, -1)
 
@@ -501,7 +517,8 @@ type tsModder struct {
 // duplicate timestamp.
 // the increment unit is determined as the next smallest time unit below the
 // most significant time unit of ts.
-//   ie, if the input is at ms precision, it will increment it 1µs.
+//
+//	ie, if the input is at ms precision, it will increment it 1µs.
 func (t *tsModder) tsMod(ts time.Time) time.Time {
 	if ts.IsZero() {
 		return ts
@@ -557,4 +574,30 @@ func (t *tsModder) tsMod(ts time.Time) time.Time {
 		}
 	}
 	return ts.Add(t.incr*t.incrn + t.rollover)
+}
+
+func (p *Parser) Init() error {
+	if len(p.Patterns) == 0 {
+		p.Patterns = []string{"%{COMBINED_LOG_FORMAT}"}
+	}
+
+	if p.UniqueTimestamp == "" {
+		p.UniqueTimestamp = "auto"
+	}
+
+	if p.Timezone == "" {
+		p.Timezone = "UTC"
+	}
+
+	return p.Compile()
+}
+
+func init() {
+	parsers.Add("grok",
+		func(defaultMetricName string) telegraf.Parser {
+			return &Parser{
+				Measurement: defaultMetricName,
+			}
+		},
+	)
 }

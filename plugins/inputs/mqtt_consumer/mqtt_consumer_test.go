@@ -1,21 +1,23 @@
 package mqtt_consumer
 
 import (
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/eclipse/paho.mqtt.golang"
-	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/plugins/parsers"
-	"github.com/influxdata/telegraf/testutil"
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/stretchr/testify/require"
+
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/plugins/parsers/influx"
+	"github.com/influxdata/telegraf/testutil"
 )
 
 type FakeClient struct {
 	ConnectF           func() mqtt.Token
-	SubscribeMultipleF func(filters map[string]byte, callback mqtt.MessageHandler) mqtt.Token
-	AddRouteF          func(topic string, callback mqtt.MessageHandler)
-	DisconnectF        func(quiesce uint)
+	SubscribeMultipleF func() mqtt.Token
+	AddRouteF          func(callback mqtt.MessageHandler)
+	DisconnectF        func()
 
 	connectCallCount    int
 	subscribeCallCount  int
@@ -28,41 +30,42 @@ func (c *FakeClient) Connect() mqtt.Token {
 	return c.ConnectF()
 }
 
-func (c *FakeClient) SubscribeMultiple(filters map[string]byte, callback mqtt.MessageHandler) mqtt.Token {
+func (c *FakeClient) SubscribeMultiple(map[string]byte, mqtt.MessageHandler) mqtt.Token {
 	c.subscribeCallCount++
-	return c.SubscribeMultipleF(filters, callback)
+	return c.SubscribeMultipleF()
 }
 
-func (c *FakeClient) AddRoute(topic string, callback mqtt.MessageHandler) {
+func (c *FakeClient) AddRoute(_ string, callback mqtt.MessageHandler) {
 	c.addRouteCallCount++
-	c.AddRouteF(topic, callback)
+	c.AddRouteF(callback)
 }
 
-func (c *FakeClient) Disconnect(quiesce uint) {
+func (c *FakeClient) Disconnect(uint) {
 	c.disconnectCallCount++
-	c.DisconnectF(quiesce)
+	c.DisconnectF()
 }
 
 type FakeParser struct {
 }
 
-// FakeParser satisfies parsers.Parser
-var _ parsers.Parser = &FakeParser{}
+// FakeParser satisfies telegraf.Parser
+var _ telegraf.Parser = &FakeParser{}
 
-func (p *FakeParser) Parse(buf []byte) ([]telegraf.Metric, error) {
+func (p *FakeParser) Parse(_ []byte) ([]telegraf.Metric, error) {
 	panic("not implemented")
 }
 
-func (p *FakeParser) ParseLine(line string) (telegraf.Metric, error) {
+func (p *FakeParser) ParseLine(_ string) (telegraf.Metric, error) {
 	panic("not implemented")
 }
 
-func (p *FakeParser) SetDefaultTags(tags map[string]string) {
+func (p *FakeParser) SetDefaultTags(_ map[string]string) {
 	panic("not implemented")
 }
 
 type FakeToken struct {
 	sessionPresent bool
+	complete       chan struct{}
 }
 
 // FakeToken satisfies mqtt.Token
@@ -84,21 +87,25 @@ func (t *FakeToken) SessionPresent() bool {
 	return t.sessionPresent
 }
 
+func (t *FakeToken) Done() <-chan struct{} {
+	return t.complete
+}
+
 // Test the basic lifecycle transitions of the plugin.
 func TestLifecycleSanity(t *testing.T) {
 	var acc testutil.Accumulator
 
-	plugin := New(func(o *mqtt.ClientOptions) Client {
+	plugin := New(func(*mqtt.ClientOptions) Client {
 		return &FakeClient{
 			ConnectF: func() mqtt.Token {
 				return &FakeToken{}
 			},
-			AddRouteF: func(topic string, callback mqtt.MessageHandler) {
+			AddRouteF: func(mqtt.MessageHandler) {
 			},
-			SubscribeMultipleF: func(filters map[string]byte, callback mqtt.MessageHandler) mqtt.Token {
+			SubscribeMultipleF: func() mqtt.Token {
 				return &FakeToken{}
 			},
-			DisconnectF: func(quiesce uint) {
+			DisconnectF: func() {
 			},
 		}
 	})
@@ -148,6 +155,8 @@ func TestPersistentClientIDFail(t *testing.T) {
 }
 
 type Message struct {
+	topic string
+	qos   byte
 }
 
 func (m *Message) Duplicate() bool {
@@ -155,7 +164,7 @@ func (m *Message) Duplicate() bool {
 }
 
 func (m *Message) Qos() byte {
-	panic("not implemented")
+	return m.qos
 }
 
 func (m *Message) Retained() bool {
@@ -163,7 +172,7 @@ func (m *Message) Retained() bool {
 }
 
 func (m *Message) Topic() string {
-	return "telegraf"
+	return m.topic
 }
 
 func (m *Message) MessageID() uint16 {
@@ -180,12 +189,16 @@ func (m *Message) Ack() {
 
 func TestTopicTag(t *testing.T) {
 	tests := []struct {
-		name     string
-		topicTag func() *string
-		expected []telegraf.Metric
+		name          string
+		topic         string
+		topicTag      func() *string
+		expectedError error
+		topicParsing  []TopicParsingConfig
+		expected      []telegraf.Metric
 	}{
 		{
-			name: "default topic when topic tag is unset for backwards compatibility",
+			name:  "default topic when topic tag is unset for backwards compatibility",
+			topic: "telegraf",
 			topicTag: func() *string {
 				return nil
 			},
@@ -203,7 +216,8 @@ func TestTopicTag(t *testing.T) {
 			},
 		},
 		{
-			name: "use topic tag when set",
+			name:  "use topic tag when set",
+			topic: "telegraf",
 			topicTag: func() *string {
 				tag := "topic_tag"
 				return &tag
@@ -222,7 +236,8 @@ func TestTopicTag(t *testing.T) {
 			},
 		},
 		{
-			name: "no topic tag is added when topic tag is set to the empty string",
+			name:  "no topic tag is added when topic tag is set to the empty string",
+			topic: "telegraf",
 			topicTag: func() *string {
 				tag := ""
 				return &tag
@@ -238,6 +253,200 @@ func TestTopicTag(t *testing.T) {
 				),
 			},
 		},
+		{
+			name:  "topic parsing configured",
+			topic: "telegraf/123/test",
+			topicTag: func() *string {
+				tag := ""
+				return &tag
+			},
+			topicParsing: []TopicParsingConfig{
+				{
+					Topic:       "telegraf/123/test",
+					Measurement: "_/_/measurement",
+					Tags:        "testTag/_/_",
+					Fields:      "_/testNumber/_",
+					FieldTypes: map[string]string{
+						"testNumber": "int",
+					},
+				},
+			},
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"test",
+					map[string]string{
+						"testTag": "telegraf",
+					},
+					map[string]interface{}{
+						"testNumber": 123,
+						"time_idle":  42,
+					},
+					time.Unix(0, 0),
+				),
+			},
+		},
+		{
+			name:  "topic parsing configured with a mqtt wild card `+`",
+			topic: "telegraf/123/test/hello",
+			topicTag: func() *string {
+				tag := ""
+				return &tag
+			},
+			topicParsing: []TopicParsingConfig{
+				{
+					Topic:       "telegraf/+/test/hello",
+					Measurement: "_/_/measurement/_",
+					Tags:        "testTag/_/_/_",
+					Fields:      "_/testNumber/_/testString",
+					FieldTypes: map[string]string{
+						"testNumber": "int",
+					},
+				},
+			},
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"test",
+					map[string]string{
+						"testTag": "telegraf",
+					},
+					map[string]interface{}{
+						"testNumber": 123,
+						"testString": "hello",
+						"time_idle":  42,
+					},
+					time.Unix(0, 0),
+				),
+			},
+		},
+		{
+			name:  "topic parsing configured incorrectly",
+			topic: "telegraf/123/test/hello",
+			topicTag: func() *string {
+				tag := ""
+				return &tag
+			},
+			expectedError: errors.New("config error topic parsing: fields length does not equal topic length"),
+			topicParsing: []TopicParsingConfig{
+				{
+					Topic:       "telegraf/+/test/hello",
+					Measurement: "_/_/measurement/_",
+					Tags:        "testTag/_/_/_",
+					Fields:      "_/_/testNumber:int/_/testString:string",
+					FieldTypes: map[string]string{
+						"testNumber": "int",
+					},
+				},
+			},
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"test",
+					map[string]string{
+						"testTag": "telegraf",
+					},
+					map[string]interface{}{
+						"testNumber": 123,
+						"testString": "hello",
+						"time_idle":  42,
+					},
+					time.Unix(0, 0),
+				),
+			},
+		},
+		{
+			name:  "topic parsing configured without fields",
+			topic: "telegraf/123/test/hello",
+			topicTag: func() *string {
+				tag := ""
+				return &tag
+			},
+			topicParsing: []TopicParsingConfig{
+				{
+					Topic:       "telegraf/+/test/hello",
+					Measurement: "_/_/measurement/_",
+					Tags:        "testTag/_/_/_",
+					FieldTypes: map[string]string{
+						"testNumber": "int",
+					},
+				},
+			},
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"test",
+					map[string]string{
+						"testTag": "telegraf",
+					},
+					map[string]interface{}{
+						"time_idle": 42,
+					},
+					time.Unix(0, 0),
+				),
+			},
+		},
+		{
+			name:  "topic parsing configured without measurement",
+			topic: "telegraf/123/test/hello",
+			topicTag: func() *string {
+				tag := ""
+				return &tag
+			},
+			topicParsing: []TopicParsingConfig{
+				{
+					Topic:  "telegraf/+/test/hello",
+					Tags:   "testTag/_/_/_",
+					Fields: "_/testNumber/_/testString",
+					FieldTypes: map[string]string{
+						"testNumber": "int",
+					},
+				},
+			},
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"cpu",
+					map[string]string{
+						"testTag": "telegraf",
+					},
+					map[string]interface{}{
+						"testNumber": 123,
+						"testString": "hello",
+						"time_idle":  42,
+					},
+					time.Unix(0, 0),
+				),
+			},
+		},
+		{
+			name:  "topic parsing configured topic with a prefix `/`",
+			topic: "/telegraf/123/test/hello",
+			topicTag: func() *string {
+				tag := ""
+				return &tag
+			},
+			topicParsing: []TopicParsingConfig{
+				{
+					Topic:       "/telegraf/+/test/hello",
+					Measurement: "/_/_/measurement/_",
+					Tags:        "/testTag/_/_/_",
+					Fields:      "/_/testNumber/_/testString",
+					FieldTypes: map[string]string{
+						"testNumber": "int",
+					},
+				},
+			},
+			expected: []telegraf.Metric{
+				testutil.MustMetric(
+					"test",
+					map[string]string{
+						"testTag": "telegraf",
+					},
+					map[string]interface{}{
+						"testNumber": 123,
+						"testString": "hello",
+						"time_idle":  42,
+					},
+					time.Unix(0, 0),
+				),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -246,35 +455,42 @@ func TestTopicTag(t *testing.T) {
 				ConnectF: func() mqtt.Token {
 					return &FakeToken{}
 				},
-				AddRouteF: func(topic string, callback mqtt.MessageHandler) {
+				AddRouteF: func(callback mqtt.MessageHandler) {
 					handler = callback
 				},
-				SubscribeMultipleF: func(filters map[string]byte, callback mqtt.MessageHandler) mqtt.Token {
+				SubscribeMultipleF: func() mqtt.Token {
 					return &FakeToken{}
 				},
-				DisconnectF: func(quiesce uint) {
+				DisconnectF: func() {
 				},
 			}
 
-			plugin := New(func(o *mqtt.ClientOptions) Client {
+			plugin := New(func(*mqtt.ClientOptions) Client {
 				return client
 			})
 			plugin.Log = testutil.Logger{}
-			plugin.Topics = []string{"telegraf"}
+			plugin.Topics = []string{tt.topic}
 			plugin.TopicTag = tt.topicTag()
+			plugin.TopicParsing = tt.topicParsing
 
-			parser, err := parsers.NewInfluxParser()
-			require.NoError(t, err)
+			parser := &influx.Parser{}
+			require.NoError(t, parser.Init())
 			plugin.SetParser(parser)
 
-			err = plugin.Init()
-			require.NoError(t, err)
+			err := plugin.Init()
+			require.Equal(t, tt.expectedError, err)
+			if tt.expectedError != nil {
+				return
+			}
 
 			var acc testutil.Accumulator
 			err = plugin.Start(&acc)
 			require.NoError(t, err)
 
-			handler(nil, &Message{})
+			var m Message
+			m.topic = tt.topic
+
+			handler(nil, &m)
 
 			plugin.Stop()
 
@@ -289,15 +505,15 @@ func TestAddRouteCalledForEachTopic(t *testing.T) {
 		ConnectF: func() mqtt.Token {
 			return &FakeToken{}
 		},
-		AddRouteF: func(topic string, callback mqtt.MessageHandler) {
+		AddRouteF: func(mqtt.MessageHandler) {
 		},
-		SubscribeMultipleF: func(filters map[string]byte, callback mqtt.MessageHandler) mqtt.Token {
+		SubscribeMultipleF: func() mqtt.Token {
 			return &FakeToken{}
 		},
-		DisconnectF: func(quiesce uint) {
+		DisconnectF: func() {
 		},
 	}
-	plugin := New(func(o *mqtt.ClientOptions) Client {
+	plugin := New(func(*mqtt.ClientOptions) Client {
 		return client
 	})
 	plugin.Log = testutil.Logger{}
@@ -312,7 +528,7 @@ func TestAddRouteCalledForEachTopic(t *testing.T) {
 
 	plugin.Stop()
 
-	require.Equal(t, client.addRouteCallCount, 2)
+	require.Equal(t, 2, client.addRouteCallCount)
 }
 
 func TestSubscribeCalledIfNoSession(t *testing.T) {
@@ -320,15 +536,15 @@ func TestSubscribeCalledIfNoSession(t *testing.T) {
 		ConnectF: func() mqtt.Token {
 			return &FakeToken{}
 		},
-		AddRouteF: func(topic string, callback mqtt.MessageHandler) {
+		AddRouteF: func(mqtt.MessageHandler) {
 		},
-		SubscribeMultipleF: func(filters map[string]byte, callback mqtt.MessageHandler) mqtt.Token {
+		SubscribeMultipleF: func() mqtt.Token {
 			return &FakeToken{}
 		},
-		DisconnectF: func(quiesce uint) {
+		DisconnectF: func() {
 		},
 	}
-	plugin := New(func(o *mqtt.ClientOptions) Client {
+	plugin := New(func(*mqtt.ClientOptions) Client {
 		return client
 	})
 	plugin.Log = testutil.Logger{}
@@ -343,7 +559,7 @@ func TestSubscribeCalledIfNoSession(t *testing.T) {
 
 	plugin.Stop()
 
-	require.Equal(t, client.subscribeCallCount, 1)
+	require.Equal(t, 1, client.subscribeCallCount)
 }
 
 func TestSubscribeNotCalledIfSession(t *testing.T) {
@@ -351,15 +567,15 @@ func TestSubscribeNotCalledIfSession(t *testing.T) {
 		ConnectF: func() mqtt.Token {
 			return &FakeToken{sessionPresent: true}
 		},
-		AddRouteF: func(topic string, callback mqtt.MessageHandler) {
+		AddRouteF: func(mqtt.MessageHandler) {
 		},
-		SubscribeMultipleF: func(filters map[string]byte, callback mqtt.MessageHandler) mqtt.Token {
+		SubscribeMultipleF: func() mqtt.Token {
 			return &FakeToken{}
 		},
-		DisconnectF: func(quiesce uint) {
+		DisconnectF: func() {
 		},
 	}
-	plugin := New(func(o *mqtt.ClientOptions) Client {
+	plugin := New(func(*mqtt.ClientOptions) Client {
 		return client
 	})
 	plugin.Log = testutil.Logger{}
@@ -374,5 +590,5 @@ func TestSubscribeNotCalledIfSession(t *testing.T) {
 
 	plugin.Stop()
 
-	require.Equal(t, client.subscribeCallCount, 0)
+	require.Equal(t, 0, client.subscribeCallCount)
 }

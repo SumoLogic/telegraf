@@ -1,24 +1,27 @@
-// +build !windows
+//go:build !windows
 
 package processes
 
 import (
+	"errors"
 	"fmt"
 	"runtime"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/testutil"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestProcesses(t *testing.T) {
 	tester := tester{}
 	processes := &Processes{
 		Log: testutil.Logger{},
-		execPS: testExecPS("STAT\n		Ss  \n		S   \n		Z   \n		R   \n		S<  \n		SNs \n		Ss+ \n		\n		\n"),
+		execPS: testExecPS(
+			"STAT\n		Ss  \n		S   \n		Z   \n		R   \n		S<  \n		SNs \n		Ss+ \n		\n		\n",
+		),
 		readProcFile: tester.testProcFile,
 	}
 	var acc testutil.Accumulator
@@ -26,13 +29,13 @@ func TestProcesses(t *testing.T) {
 	err := processes.Gather(&acc)
 	require.NoError(t, err)
 
-	assert.True(t, acc.HasInt64Field("processes", "running"))
-	assert.True(t, acc.HasInt64Field("processes", "sleeping"))
-	assert.True(t, acc.HasInt64Field("processes", "stopped"))
-	assert.True(t, acc.HasInt64Field("processes", "total"))
+	require.True(t, acc.HasInt64Field("processes", "running"))
+	require.True(t, acc.HasInt64Field("processes", "sleeping"))
+	require.True(t, acc.HasInt64Field("processes", "stopped"))
+	require.True(t, acc.HasInt64Field("processes", "total"))
 	total, ok := acc.Get("processes")
 	require.True(t, ok)
-	assert.True(t, total.Fields["total"].(int64) > 0)
+	require.Greater(t, total.Fields["total"].(int64), int64(0))
 }
 
 func TestFromPS(t *testing.T) {
@@ -126,7 +129,8 @@ func TestParkedProcess(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("Parked process test only relevant on linux")
 	}
-	procstat := `88 (watchdog/13) P 2 0 0 0 -1 69238848 0 0 0 0 0 0 0 0 20 0 1 0 20 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483647 0 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+	procstat := `88 (watchdog/13) P 2 0 0 0 -1 69238848 0 0 0 0 0 0 0 0 20 0 1 0 20 0 0 18446744073709551615 0 0 0 0 0 0 0 ` +
+		`2147483647 0 1 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 `
 	plugin := &Processes{
 		Log: testutil.Logger{},
@@ -169,8 +173,8 @@ func TestParkedProcess(t *testing.T) {
 		testutil.IgnoreTime())
 }
 
-func testExecPS(out string) func() ([]byte, error) {
-	return func() ([]byte, error) { return []byte(out), nil }
+func testExecPS(out string) func(_ bool) ([]byte, error) {
+	return func(_ bool) ([]byte, error) { return []byte(out), nil }
 }
 
 // struct for counting calls to testProcFile
@@ -188,12 +192,14 @@ func (t *tester) testProcFile2(_ string) ([]byte, error) {
 	return []byte(fmt.Sprintf(testProcStat2, "S", "2")), nil
 }
 
-func testExecPSError() ([]byte, error) {
-	return []byte("\nSTAT\nD\nI\nL\nR\nR+\nS\nS+\nSNs\nSs\nU\nZ\n"), fmt.Errorf("ERROR!")
+func testExecPSError(_ bool) ([]byte, error) {
+	return []byte("\nSTAT\nD\nI\nL\nR\nR+\nS\nS+\nSNs\nSs\nU\nZ\n"), errors.New("error")
 }
 
-const testProcStat = `10 (rcuob/0) %s 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 %s 0 11 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483647 0 18446744073709551615 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+const testProcStat = `10 (rcuob/0) %s 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 %s 0 11 0 0 18446744073709551615 0 0 0 0 0 0 0 ` +
+	`2147483647 0 18446744073709551615 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 `
 
-const testProcStat2 = `10 (rcuob 0) %s 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 %s 0 11 0 0 18446744073709551615 0 0 0 0 0 0 0 2147483647 0 18446744073709551615 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0
+const testProcStat2 = `10 (rcuob 0) %s 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 %s 0 11 0 0 18446744073709551615 0 0 0 0 0 0 0 ` +
+	`2147483647 0 18446744073709551615 0 0 17 0 0 0 0 0 0 0 0 0 0 0 0 0 0
 `

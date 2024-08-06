@@ -3,20 +3,35 @@ package shim
 import (
 	"bufio"
 	"io"
-	"io/ioutil"
+	"math/rand"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/metric"
-	"github.com/influxdata/telegraf/plugins/parsers"
-	"github.com/influxdata/telegraf/plugins/serializers"
-	"github.com/stretchr/testify/require"
+	"github.com/influxdata/telegraf/plugins/parsers/influx"
+	influxSerializer "github.com/influxdata/telegraf/plugins/serializers/influx"
 )
 
 func TestProcessorShim(t *testing.T) {
-	p := &testProcessor{}
+	testSendAndReceive(t, "f1", "fv1")
+}
+
+func TestProcessorShimWithLargerThanDefaultScannerBufferSize(t *testing.T) {
+	letters := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	b := make([]rune, 0, bufio.MaxScanTokenSize*2)
+	for i := 0; i < bufio.MaxScanTokenSize*2; i++ {
+		b = append(b, letters[rand.Intn(len(letters))])
+	}
+
+	testSendAndReceive(t, "f1", string(b))
+}
+
+func testSendAndReceive(t *testing.T, fieldKey string, fieldValue string) {
+	p := &testProcessor{"hi", "mom"}
 
 	stdinReader, stdinWriter := io.Pipe()
 	stdoutReader, stdoutWriter := io.Pipe()
@@ -37,15 +52,19 @@ func TestProcessorShim(t *testing.T) {
 		wg.Done()
 	}()
 
-	serializer, _ := serializers.NewInfluxSerializer()
-	parser, _ := parsers.NewInfluxParser()
+	serializer := &influxSerializer.Serializer{}
+	require.NoError(t, serializer.Init())
 
-	m, _ := metric.New("thing",
+	parser := influx.Parser{}
+	require.NoError(t, parser.Init())
+
+	m := metric.New("thing",
 		map[string]string{
 			"a": "b",
 		},
 		map[string]interface{}{
-			"v": 1,
+			"v":      1,
+			fieldKey: fieldValue,
 		},
 		time.Now(),
 	)
@@ -62,19 +81,27 @@ func TestProcessorShim(t *testing.T) {
 	mOut, err := parser.ParseLine(out)
 	require.NoError(t, err)
 
-	val, ok := mOut.GetTag("hi")
+	val, ok := mOut.GetTag(p.tagName)
 	require.True(t, ok)
-	require.Equal(t, "mom", val)
-
-	go ioutil.ReadAll(r)
+	require.Equal(t, p.tagValue, val)
+	val2, ok := mOut.Fields()[fieldKey]
+	require.True(t, ok)
+	require.Equal(t, fieldValue, val2)
+	go func() {
+		_, err = io.ReadAll(r)
+		require.NoError(t, err)
+	}()
 	wg.Wait()
 }
 
-type testProcessor struct{}
+type testProcessor struct {
+	tagName  string
+	tagValue string
+}
 
 func (p *testProcessor) Apply(in ...telegraf.Metric) []telegraf.Metric {
-	for _, metric := range in {
-		metric.AddTag("hi", "mom")
+	for _, m := range in {
+		m.AddTag(p.tagName, p.tagValue)
 	}
 	return in
 }

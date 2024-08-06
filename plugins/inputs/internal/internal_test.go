@@ -1,47 +1,51 @@
 package internal
 
 import (
+	"fmt"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf/selfstat"
 	"github.com/influxdata/telegraf/testutil"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestSelfPlugin(t *testing.T) {
-	s := NewSelf()
+	s := Self{
+		CollectMemstats: true,
+	}
 	acc := &testutil.Accumulator{}
 
-	s.Gather(acc)
-	assert.True(t, acc.HasMeasurement("internal_memstats"))
+	require.NoError(t, s.Gather(acc))
+	require.True(t, acc.HasMeasurement("internal_memstats"))
 
 	// test that a registered stat is incremented
 	stat := selfstat.Register("mytest", "test", map[string]string{"test": "foo"})
 	stat.Incr(1)
 	stat.Incr(2)
-	s.Gather(acc)
+	require.NoError(t, s.Gather(acc))
+
 	acc.AssertContainsTaggedFields(t, "internal_mytest",
 		map[string]interface{}{
 			"test": int64(3),
 		},
 		map[string]string{
 			"test":    "foo",
-			"version": "",
+			"version": "unknown",
 		},
 	)
 	acc.ClearMetrics()
 
 	// test that a registered stat is set properly
 	stat.Set(101)
-	s.Gather(acc)
+	require.NoError(t, s.Gather(acc))
 	acc.AssertContainsTaggedFields(t, "internal_mytest",
 		map[string]interface{}{
 			"test": int64(101),
 		},
 		map[string]string{
 			"test":    "foo",
-			"version": "",
+			"version": "unknown",
 		},
 	)
 	acc.ClearMetrics()
@@ -51,7 +55,7 @@ func TestSelfPlugin(t *testing.T) {
 	timing := selfstat.RegisterTiming("mytest", "test_ns", map[string]string{"test": "foo"})
 	timing.Incr(100)
 	timing.Incr(200)
-	s.Gather(acc)
+	require.NoError(t, s.Gather(acc))
 	acc.AssertContainsTaggedFields(t, "internal_mytest",
 		map[string]interface{}{
 			"test":    int64(101),
@@ -59,7 +63,52 @@ func TestSelfPlugin(t *testing.T) {
 		},
 		map[string]string{
 			"test":    "foo",
-			"version": "",
+			"version": "unknown",
 		},
 	)
+}
+
+func TestNoMemStat(t *testing.T) {
+	s := Self{
+		CollectMemstats: false,
+		CollectGostats:  false,
+	}
+	acc := &testutil.Accumulator{}
+
+	require.NoError(t, s.Gather(acc))
+	require.False(t, acc.HasMeasurement("internal_memstats"))
+	require.False(t, acc.HasMeasurement("internal_gostats"))
+}
+
+func TestGostats(t *testing.T) {
+	s := Self{
+		CollectMemstats: false,
+		CollectGostats:  true,
+	}
+	acc := &testutil.Accumulator{}
+
+	require.NoError(t, s.Gather(acc))
+	require.False(t, acc.HasMeasurement("internal_memstats"))
+	require.True(t, acc.HasMeasurement("internal_gostats"))
+
+	var metric *testutil.Metric
+	for _, m := range acc.Metrics {
+		if m.Measurement == "internal_gostats" {
+			metric = m
+			break
+		}
+	}
+
+	require.NotNil(t, metric)
+	require.Equal(t, "internal_gostats", metric.Measurement)
+	require.Len(t, metric.Tags, 1)
+	require.Contains(t, metric.Tags, "go_version")
+
+	for name, value := range metric.Fields {
+		switch value.(type) {
+		case int64, uint64, float64:
+		default:
+			require.True(t, false, fmt.Sprintf("field %s is of non-numeric type %T\n", name, value))
+		}
+	}
 }

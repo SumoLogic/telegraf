@@ -1,6 +1,8 @@
+//go:generate ../../../tools/readme_config_includer/generator
 package riak
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,6 +12,9 @@ import (
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
+
+//go:embed sample.conf
+var sampleConfig string
 
 // Type Riak gathers statistics from one or more Riak instances
 type Riak struct {
@@ -21,19 +26,19 @@ type Riak struct {
 
 // NewRiak return a new instance of Riak with a default http client
 func NewRiak() *Riak {
-	tr := &http.Transport{ResponseHeaderTimeout: time.Duration(3 * time.Second)}
+	tr := &http.Transport{ResponseHeaderTimeout: 3 * time.Second}
 	client := &http.Client{
 		Transport: tr,
-		Timeout:   time.Duration(4 * time.Second),
+		Timeout:   4 * time.Second,
 	}
 	return &Riak{client: client}
 }
 
 // Type riakStats represents the data that is received from Riak
 type riakStats struct {
-	CpuAvg1                  int64  `json:"cpu_avg1"`
-	CpuAvg15                 int64  `json:"cpu_avg15"`
-	CpuAvg5                  int64  `json:"cpu_avg5"`
+	CPUAvg1                  int64  `json:"cpu_avg1"`
+	CPUAvg15                 int64  `json:"cpu_avg15"`
+	CPUAvg5                  int64  `json:"cpu_avg5"`
 	MemoryCode               int64  `json:"memory_code"`
 	MemoryEts                int64  `json:"memory_ets"`
 	MemoryProcesses          int64  `json:"memory_processes"`
@@ -79,20 +84,8 @@ type riakStats struct {
 	ReadRepairsTotal         int64  `json:"read_repairs_total"`
 }
 
-// A sample configuration to only gather stats from localhost, default port.
-const sampleConfig = `
-  # Specify a list of one or more riak http servers
-  servers = ["http://localhost:8098"]
-`
-
-// Returns a sample configuration for the plugin
-func (r *Riak) SampleConfig() string {
+func (*Riak) SampleConfig() string {
 	return sampleConfig
-}
-
-// Returns a description of the plugin
-func (r *Riak) Description() string {
-	return "Read metrics one or many Riak servers"
 }
 
 // Reads stats from all configured servers.
@@ -115,7 +108,7 @@ func (r *Riak) gatherServer(s string, acc telegraf.Accumulator) error {
 	// Parse the given URL to extract the server tag
 	u, err := url.Parse(s)
 	if err != nil {
-		return fmt.Errorf("riak unable to parse given server url %s: %s", s, err)
+		return fmt.Errorf("riak unable to parse given server URL %q: %w", s, err)
 	}
 
 	// Perform the GET request to the riak /stats endpoint
@@ -133,7 +126,7 @@ func (r *Riak) gatherServer(s string, acc telegraf.Accumulator) error {
 	// Decode the response JSON into a new stats struct
 	stats := &riakStats{}
 	if err := json.NewDecoder(resp.Body).Decode(stats); err != nil {
-		return fmt.Errorf("unable to decode riak response: %s", err)
+		return fmt.Errorf("unable to decode riak response: %w", err)
 	}
 
 	// Build a map of tags
@@ -144,9 +137,9 @@ func (r *Riak) gatherServer(s string, acc telegraf.Accumulator) error {
 
 	// Build a map of field values
 	fields := map[string]interface{}{
-		"cpu_avg1":                     stats.CpuAvg1,
-		"cpu_avg15":                    stats.CpuAvg15,
-		"cpu_avg5":                     stats.CpuAvg5,
+		"cpu_avg1":                     stats.CPUAvg1,
+		"cpu_avg15":                    stats.CPUAvg15,
+		"cpu_avg5":                     stats.CPUAvg5,
 		"memory_code":                  stats.MemoryCode,
 		"memory_ets":                   stats.MemoryEts,
 		"memory_processes":             stats.MemoryProcesses,

@@ -2,7 +2,6 @@ package influx
 
 import (
 	"bytes"
-	"reflect"
 	"strconv"
 	"strings"
 	"unsafe"
@@ -36,25 +35,22 @@ var (
 func unescape(b []byte) string {
 	if bytes.ContainsAny(b, escapes) {
 		return unescaper.Replace(unsafeBytesToString(b))
-	} else {
-		return string(b)
 	}
+	return string(b)
 }
 
 func nameUnescape(b []byte) string {
 	if bytes.ContainsAny(b, nameEscapes) {
 		return nameUnescaper.Replace(unsafeBytesToString(b))
-	} else {
-		return string(b)
 	}
+	return string(b)
 }
 
 func stringFieldUnescape(b []byte) string {
 	if bytes.ContainsAny(b, stringFieldEscapes) {
 		return stringFieldUnescaper.Replace(unsafeBytesToString(b))
-	} else {
-		return string(b)
 	}
+	return string(b)
 }
 
 // parseIntBytes is a zero-alloc wrapper around strconv.ParseInt.
@@ -81,15 +77,7 @@ func parseBoolBytes(b []byte) (bool, error) {
 }
 
 // unsafeBytesToString converts a []byte to a string without a heap allocation.
-//
-// It is unsafe, and is intended to prepare input to short-lived functions
-// that require strings.
 func unsafeBytesToString(in []byte) string {
-	src := *(*reflect.SliceHeader)(unsafe.Pointer(&in))
-	dst := reflect.StringHeader{
-		Data: src.Data,
-		Len:  src.Len,
-	}
-	s := *(*string)(unsafe.Pointer(&dst))
-	return s
+	//nolint:gosec // G103: It is unsafe, and is intended to prepare input to short-lived functions that require strings.
+	return unsafe.String(&in[0], len(in))
 }

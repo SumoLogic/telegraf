@@ -37,9 +37,12 @@ type MongoStatus struct {
 	ColStats      *ColStats
 	ShardStats    *ShardStats
 	OplogStats    *OplogStats
+	TopStats      *TopStats
 }
 
 type ServerStatus struct {
+	SampleTime         time.Time              `bson:""`
+	Flattened          map[string]interface{} `bson:""`
 	Host               string                 `bson:"host"`
 	Version            string                 `bson:"version"`
 	Process            string                 `bson:"process"`
@@ -63,7 +66,7 @@ type ServerStatus struct {
 	Mem                *MemStats              `bson:"mem"`
 	Repl               *ReplStatus            `bson:"repl"`
 	ShardCursorType    map[string]interface{} `bson:"shardCursorType"`
-	StorageEngine      map[string]string      `bson:"storageEngine"`
+	StorageEngine      *StorageEngine         `bson:"storageEngine"`
 	WiredTiger         *WiredTiger            `bson:"wiredTiger"`
 	Metrics            *MetricsStats          `bson:"metrics"`
 	TCMallocStats      *TCMallocStats         `bson:"tcmalloc"`
@@ -93,6 +96,8 @@ type DbStatsData struct {
 	IndexSize   int64       `bson:"indexSize"`
 	Ok          int64       `bson:"ok"`
 	GleStats    interface{} `bson:"gleStats"`
+	FsUsedSize  int64       `bson:"fsUsedSize"`
+	FsTotalSize int64       `bson:"fsTotalSize"`
 }
 
 type ColStats struct {
@@ -134,6 +139,7 @@ type OplogStats struct {
 // ReplSetMember stores information related to a replica set member
 type ReplSetMember struct {
 	Name       string    `bson:"name"`
+	Health     int64     `bson:"health"`
 	State      int64     `bson:"state"`
 	StateStr   string    `bson:"stateStr"`
 	OptimeDate time.Time `bson:"optimeDate"`
@@ -144,6 +150,8 @@ type WiredTiger struct {
 	Transaction TransactionStats       `bson:"transaction"`
 	Concurrent  ConcurrentTransactions `bson:"concurrentTransactions"`
 	Cache       CacheStats             `bson:"cache"`
+	Connection  WTConnectionStats      `bson:"connection"`
+	DataHandle  DataHandleStats        `bson:"data-handle"`
 }
 
 // ShardStats stores information from shardConnPoolStats.
@@ -167,6 +175,27 @@ type ShardHostStatsData struct {
 	Available  int64 `bson:"available"`
 	Created    int64 `bson:"created"`
 	Refreshing int64 `bson:"refreshing"`
+}
+
+type TopStats struct {
+	Totals map[string]TopStatCollection `bson:"totals"`
+}
+
+type TopStatCollection struct {
+	Total     TopStatCollectionData `bson:"total"`
+	ReadLock  TopStatCollectionData `bson:"readLock"`
+	WriteLock TopStatCollectionData `bson:"writeLock"`
+	Queries   TopStatCollectionData `bson:"queries"`
+	GetMore   TopStatCollectionData `bson:"getmore"`
+	Insert    TopStatCollectionData `bson:"insert"`
+	Update    TopStatCollectionData `bson:"update"`
+	Remove    TopStatCollectionData `bson:"remove"`
+	Commands  TopStatCollectionData `bson:"commands"`
+}
+
+type TopStatCollectionData struct {
+	Time  int64 `bson:"time"`
+	Count int64 `bson:"count"`
 }
 
 type ConcurrentTransactions struct {
@@ -212,22 +241,37 @@ type CacheStats struct {
 	UnmodifiedPagesEvicted    int64 `bson:"unmodified pages evicted"`
 }
 
+type StorageEngine struct {
+	Name string `bson:"name"`
+}
+
 // TransactionStats stores transaction checkpoints in WiredTiger.
 type TransactionStats struct {
 	TransCheckpointsTotalTimeMsecs int64 `bson:"transaction checkpoint total time (msecs)"`
 	TransCheckpoints               int64 `bson:"transaction checkpoints"`
 }
 
+// WTConnectionStats stores statistics on wiredTiger connections
+type WTConnectionStats struct {
+	FilesCurrentlyOpen int64 `bson:"files currently open"`
+}
+
+// DataHandleStats stores statistics for wiredTiger data-handles
+type DataHandleStats struct {
+	DataHandlesCurrentlyActive int64 `bson:"connection data handles currently active"`
+}
+
 // ReplStatus stores data related to replica sets.
 type ReplStatus struct {
-	SetName      interface{} `bson:"setName"`
-	IsMaster     interface{} `bson:"ismaster"`
-	Secondary    interface{} `bson:"secondary"`
-	IsReplicaSet interface{} `bson:"isreplicaset"`
-	ArbiterOnly  interface{} `bson:"arbiterOnly"`
-	Hosts        []string    `bson:"hosts"`
-	Passives     []string    `bson:"passives"`
-	Me           string      `bson:"me"`
+	SetName           string      `bson:"setName"`
+	IsWritablePrimary interface{} `bson:"isWritablePrimary"` // mongodb 5.x
+	IsMaster          interface{} `bson:"ismaster"`
+	Secondary         interface{} `bson:"secondary"`
+	IsReplicaSet      interface{} `bson:"isreplicaset"`
+	ArbiterOnly       interface{} `bson:"arbiterOnly"`
+	Hosts             []string    `bson:"hosts"`
+	Passives          []string    `bson:"passives"`
+	Me                string      `bson:"me"`
 }
 
 // DBRecordStats stores data related to memory operations across databases.
@@ -280,12 +324,12 @@ type DurTiming struct {
 
 // DurStats stores information related to journaling statistics.
 type DurStats struct {
-	Commits            int64 `bson:"commits"`
-	JournaledMB        int64 `bson:"journaledMB"`
-	WriteToDataFilesMB int64 `bson:"writeToDataFilesMB"`
-	Compression        int64 `bson:"compression"`
-	CommitsInWriteLock int64 `bson:"commitsInWriteLock"`
-	EarlyCommits       int64 `bson:"earlyCommits"`
+	Commits            float64 `bson:"commits"`
+	JournaledMB        float64 `bson:"journaledMB"`
+	WriteToDataFilesMB float64 `bson:"writeToDataFilesMB"`
+	Compression        float64 `bson:"compression"`
+	CommitsInWriteLock float64 `bson:"commitsInWriteLock"`
+	EarlyCommits       float64 `bson:"earlyCommits"`
 	TimeMs             DurTiming
 }
 
@@ -712,6 +756,12 @@ type StatLine struct {
 	ModifiedPagesEvicted      int64
 	UnmodifiedPagesEvicted    int64
 
+	// Connection statistics (wiredtiger only)
+	FilesCurrentlyOpen int64
+
+	// Data handles statistics (wiredtiger only)
+	DataHandlesCurrentlyActive int64
+
 	// Replicated Opcounter fields
 	InsertR, InsertRCnt                      int64
 	QueryR, QueryRCnt                        int64
@@ -734,9 +784,11 @@ type StatLine struct {
 	NetOut, NetOutCnt                        int64
 	NumConnections                           int64
 	ReplSetName                              string
+	ReplHealthAvg                            float64
 	NodeType                                 string
 	NodeState                                string
 	NodeStateInt                             int64
+	NodeHealthInt                            int64
 
 	// Replicated Metrics fields
 	ReplNetworkBytes                    int64
@@ -767,6 +819,8 @@ type StatLine struct {
 
 	// Shard Hosts stats field
 	ShardHostStatsLines map[string]ShardHostStatLine
+
+	TopStatLines []TopStatLine
 
 	// TCMalloc stats field
 	TCMallocCurrentAllocatedBytes        int64
@@ -806,6 +860,8 @@ type DbStatLine struct {
 	Indexes     int64
 	IndexSize   int64
 	Ok          int64
+	FsUsedSize  int64
+	FsTotalSize int64
 }
 type ColStatLine struct {
 	Name           string
@@ -823,6 +879,19 @@ type ShardHostStatLine struct {
 	Available  int64
 	Created    int64
 	Refreshing int64
+}
+
+type TopStatLine struct {
+	CollectionName                string
+	TotalTime, TotalCount         int64
+	ReadLockTime, ReadLockCount   int64
+	WriteLockTime, WriteLockCount int64
+	QueriesTime, QueriesCount     int64
+	GetMoreTime, GetMoreCount     int64
+	InsertTime, InsertCount       int64
+	UpdateTime, UpdateCount       int64
+	RemoveTime, RemoveCount       int64
+	CommandsTime, CommandsCount   int64
 }
 
 func parseLocks(stat ServerStatus) map[string]LockUsage {
@@ -859,7 +928,7 @@ func computeLockDiffs(prevLocks, curLocks map[string]LockUsage) []LockUsage {
 	return lockUsages
 }
 
-func diff(newVal, oldVal, sampleTime int64) (int64, int64) {
+func diff(newVal, oldVal, sampleTime int64) (avg int64, newValue int64) {
 	d := newVal - oldVal
 	if d < 0 {
 		d = newVal
@@ -891,8 +960,8 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 	returnVal.TotalCreatedC = newStat.Connections.TotalCreated
 
 	// set the storage engine appropriately
-	if newStat.StorageEngine != nil && newStat.StorageEngine["name"] != "" {
-		returnVal.StorageEngine = newStat.StorageEngine["name"]
+	if newStat.StorageEngine != nil && newStat.StorageEngine.Name != "" {
+		returnVal.StorageEngine = newStat.StorageEngine.Name
 	} else {
 		returnVal.StorageEngine = "mmapv1"
 	}
@@ -959,7 +1028,11 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 	if newStat.Metrics != nil && oldStat.Metrics != nil {
 		if newStat.Metrics.TTL != nil && oldStat.Metrics.TTL != nil {
 			returnVal.Passes, returnVal.PassesCnt = diff(newStat.Metrics.TTL.Passes, oldStat.Metrics.TTL.Passes, sampleSecs)
-			returnVal.DeletedDocuments, returnVal.DeletedDocumentsCnt = diff(newStat.Metrics.TTL.DeletedDocuments, oldStat.Metrics.TTL.DeletedDocuments, sampleSecs)
+			returnVal.DeletedDocuments, returnVal.DeletedDocumentsCnt = diff(
+				newStat.Metrics.TTL.DeletedDocuments,
+				oldStat.Metrics.TTL.DeletedDocuments,
+				sampleSecs,
+			)
 		}
 		if newStat.Metrics.Cursor != nil && oldStat.Metrics.Cursor != nil {
 			returnVal.TimedOutC, returnVal.TimedOutCCnt = diff(newStat.Metrics.Cursor.TimedOut, oldStat.Metrics.Cursor.TimedOut, sampleSecs)
@@ -1043,8 +1116,10 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 			}
 			if newStat.Metrics.Repl.Network != nil {
 				returnVal.ReplNetworkBytes = newStat.Metrics.Repl.Network.Bytes
-				returnVal.ReplNetworkGetmoresNum = newStat.Metrics.Repl.Network.GetMores.Num
-				returnVal.ReplNetworkGetmoresTotalMillis = newStat.Metrics.Repl.Network.GetMores.TotalMillis
+				if newStat.Metrics.Repl.Network.GetMores != nil {
+					returnVal.ReplNetworkGetmoresNum = newStat.Metrics.Repl.Network.GetMores.Num
+					returnVal.ReplNetworkGetmoresTotalMillis = newStat.Metrics.Repl.Network.GetMores.TotalMillis
+				}
 				returnVal.ReplNetworkOps = newStat.Metrics.Repl.Network.Ops
 			}
 		}
@@ -1092,16 +1167,24 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 		returnVal.UnmodifiedPagesEvicted = newStat.WiredTiger.Cache.UnmodifiedPagesEvicted
 
 		returnVal.FlushesTotalTime = newStat.WiredTiger.Transaction.TransCheckpointsTotalTimeMsecs * int64(time.Millisecond)
+
+		returnVal.FilesCurrentlyOpen = newStat.WiredTiger.Connection.FilesCurrentlyOpen
+
+		returnVal.DataHandlesCurrentlyActive = newStat.WiredTiger.DataHandle.DataHandlesCurrentlyActive
 	}
 	if newStat.WiredTiger != nil && oldStat.WiredTiger != nil {
-		returnVal.Flushes, returnVal.FlushesCnt = diff(newStat.WiredTiger.Transaction.TransCheckpoints, oldStat.WiredTiger.Transaction.TransCheckpoints, sampleSecs)
+		returnVal.Flushes, returnVal.FlushesCnt = diff(
+			newStat.WiredTiger.Transaction.TransCheckpoints,
+			oldStat.WiredTiger.Transaction.TransCheckpoints,
+			sampleSecs,
+		)
 	} else if newStat.BackgroundFlushing != nil && oldStat.BackgroundFlushing != nil {
 		returnVal.Flushes, returnVal.FlushesCnt = diff(newStat.BackgroundFlushing.Flushes, oldStat.BackgroundFlushing.Flushes, sampleSecs)
 	}
 
 	returnVal.Time = newMongo.SampleTime
 	returnVal.IsMongos =
-		(newStat.ShardCursorType != nil || strings.HasPrefix(newStat.Process, MongosProcess))
+		newStat.ShardCursorType != nil || strings.HasPrefix(newStat.Process, MongosProcess)
 
 	// BEGIN code modification
 	if oldStat.Mem.Supported.(bool) {
@@ -1118,21 +1201,19 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 	}
 
 	if newStat.Repl != nil {
-		setName, isReplSet := newStat.Repl.SetName.(string)
-		if isReplSet {
-			returnVal.ReplSetName = setName
-		}
+		returnVal.ReplSetName = newStat.Repl.SetName
 		// BEGIN code modification
-		if newStat.Repl.IsMaster.(bool) {
+		if val, ok := newStat.Repl.IsMaster.(bool); ok && val {
 			returnVal.NodeType = "PRI"
-		} else if newStat.Repl.Secondary != nil && newStat.Repl.Secondary.(bool) {
+		} else if val, ok := newStat.Repl.IsWritablePrimary.(bool); ok && val {
+			returnVal.NodeType = "PRI"
+		} else if val, ok := newStat.Repl.Secondary.(bool); ok && val {
 			returnVal.NodeType = "SEC"
-		} else if newStat.Repl.ArbiterOnly != nil && newStat.Repl.ArbiterOnly.(bool) {
+		} else if val, ok := newStat.Repl.ArbiterOnly.(bool); ok && val {
 			returnVal.NodeType = "ARB"
 		} else {
 			returnVal.NodeType = "UNK"
-		}
-		// END code modification
+		} // END code modification
 	} else if returnVal.IsMongos {
 		returnVal.NodeType = "RTR"
 	}
@@ -1141,16 +1222,18 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 		oldStat.ExtraInfo.PageFaults != nil && newStat.ExtraInfo.PageFaults != nil {
 		returnVal.Faults, returnVal.FaultsCnt = diff(*(newStat.ExtraInfo.PageFaults), *(oldStat.ExtraInfo.PageFaults), sampleSecs)
 	}
-	if !returnVal.IsMongos && oldStat.Locks != nil {
-		globalCheck, hasGlobal := oldStat.Locks["Global"]
-		if hasGlobal && globalCheck.AcquireCount != nil {
+	if !returnVal.IsMongos && oldStat.Locks != nil && newStat.Locks != nil {
+		globalCheckOld, hasGlobalOld := oldStat.Locks["Global"]
+		globalCheckNew, hasGlobalNew := newStat.Locks["Global"]
+		if hasGlobalOld && globalCheckOld.AcquireCount != nil && hasGlobalNew && globalCheckNew.AcquireCount != nil {
 			// This appears to be a 3.0+ server so the data in these fields do *not* refer to
 			// actual namespaces and thus we can't compute lock %.
 			returnVal.HighestLocked = nil
 
 			// Check if it's a 3.0+ MMAP server so we can still compute collection locks
-			collectionCheck, hasCollection := oldStat.Locks["Collection"]
-			if hasCollection && collectionCheck.AcquireWaitCount != nil {
+			collectionCheckOld, hasCollectionOld := oldStat.Locks["Collection"]
+			collectionCheckNew, hasCollectionNew := newStat.Locks["Collection"]
+			if hasCollectionOld && collectionCheckOld.AcquireWaitCount != nil && hasCollectionNew && collectionCheckNew.AcquireWaitCount != nil {
 				readWaitCountDiff := newStat.Locks["Collection"].AcquireWaitCount.Read - oldStat.Locks["Collection"].AcquireWaitCount.Read
 				readTotalCountDiff := newStat.Locks["Collection"].AcquireCount.Read - oldStat.Locks["Collection"].AcquireCount.Read
 				writeWaitCountDiff := newStat.Locks["Collection"].AcquireWaitCount.Write - oldStat.Locks["Collection"].AcquireWaitCount.Write
@@ -1180,9 +1263,7 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 				// Get the entry with the highest lock
 				highestLocked := lockdiffs[len(lockdiffs)-1]
 
-				var timeDiffMillis int64
-				timeDiffMillis = newStat.UptimeMillis - oldStat.UptimeMillis
-
+				timeDiffMillis := newStat.UptimeMillis - oldStat.UptimeMillis
 				lockToReport := highestLocked.Writes
 
 				// if the highest locked namespace is not '.'
@@ -1210,12 +1291,14 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 	}
 
 	if newStat.GlobalLock != nil {
-		hasWT := (newStat.WiredTiger != nil && oldStat.WiredTiger != nil)
+		hasWT := newStat.WiredTiger != nil && oldStat.WiredTiger != nil
 		//If we have wiredtiger stats, use those instead
 		if newStat.GlobalLock.CurrentQueue != nil {
 			if hasWT {
-				returnVal.QueuedReaders = newStat.GlobalLock.CurrentQueue.Readers + newStat.GlobalLock.ActiveClients.Readers - newStat.WiredTiger.Concurrent.Read.Out
-				returnVal.QueuedWriters = newStat.GlobalLock.CurrentQueue.Writers + newStat.GlobalLock.ActiveClients.Writers - newStat.WiredTiger.Concurrent.Write.Out
+				returnVal.QueuedReaders = newStat.GlobalLock.CurrentQueue.Readers + newStat.GlobalLock.ActiveClients.Readers -
+					newStat.WiredTiger.Concurrent.Read.Out
+				returnVal.QueuedWriters = newStat.GlobalLock.CurrentQueue.Writers + newStat.GlobalLock.ActiveClients.Writers -
+					newStat.WiredTiger.Concurrent.Write.Out
 				if returnVal.QueuedReaders < 0 {
 					returnVal.QueuedReaders = 0
 				}
@@ -1264,15 +1347,17 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 					returnVal.NodeState = member.StateStr
 					// Store my state integer
 					returnVal.NodeStateInt = member.State
+					// Store my health integer
+					returnVal.NodeHealthInt = member.Health
 
 					if member.State == 1 {
 						// I'm the master
 						returnVal.ReplLag = 0
 						break
-					} else {
-						// I'm secondary
-						me = member
 					}
+
+					// I'm secondary
+					me = member
 				} else if member.State == 1 {
 					// Master found
 					master = member
@@ -1287,6 +1372,26 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 				} else {
 					returnVal.ReplLag = lag
 				}
+			}
+
+			// Preparations for the average health state of the replica-set
+			replMemberCount := len(newReplStat.Members)
+			replMemberHealthyCount := 0
+
+			// Second for-loop is needed, because of break-construct above
+			for _, member := range newReplStat.Members {
+				// Count only healthy members for the average health state of the replica-set
+				if member.Health == 1 {
+					replMemberHealthyCount++
+				}
+			}
+
+			// Calculate the average health state of the replica-set (For precise monitoring alerts)
+			// To detect if a member is unhealthy from the perspective of another member and also how bad the replica-set health is
+			if replMemberCount > 0 {
+				returnVal.ReplHealthAvg = float64(replMemberHealthyCount) / float64(replMemberCount)
+			} else {
+				returnVal.ReplHealthAvg = 0.00
 			}
 		}
 	}
@@ -1319,6 +1424,8 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 				Indexes:     dbStatsData.Indexes,
 				IndexSize:   dbStatsData.IndexSize,
 				Ok:          dbStatsData.Ok,
+				FsTotalSize: dbStatsData.FsTotalSize,
+				FsUsedSize:  dbStatsData.FsUsedSize,
 			}
 			returnVal.DbStatsLines = append(returnVal.DbStatsLines, *dbStatLine)
 		}
@@ -1362,6 +1469,33 @@ func NewStatLine(oldMongo, newMongo MongoStatus, key string, all bool, sampleSec
 			}
 
 			returnVal.ShardHostStatsLines[host] = *shardStatLine
+		}
+	}
+
+	if newMongo.TopStats != nil {
+		for collection, data := range newMongo.TopStats.Totals {
+			topStatDataLine := &TopStatLine{
+				CollectionName: collection,
+				TotalTime:      data.Total.Time,
+				TotalCount:     data.Total.Count,
+				ReadLockTime:   data.ReadLock.Time,
+				ReadLockCount:  data.ReadLock.Count,
+				WriteLockTime:  data.WriteLock.Time,
+				WriteLockCount: data.WriteLock.Count,
+				QueriesTime:    data.Queries.Time,
+				QueriesCount:   data.Queries.Count,
+				GetMoreTime:    data.GetMore.Time,
+				GetMoreCount:   data.GetMore.Count,
+				InsertTime:     data.Insert.Time,
+				InsertCount:    data.Insert.Count,
+				UpdateTime:     data.Update.Time,
+				UpdateCount:    data.Update.Count,
+				RemoveTime:     data.Remove.Time,
+				RemoveCount:    data.Remove.Count,
+				CommandsTime:   data.Commands.Time,
+				CommandsCount:  data.Commands.Count,
+			}
+			returnVal.TopStatLines = append(returnVal.TopStatLines, *topStatDataLine)
 		}
 	}
 

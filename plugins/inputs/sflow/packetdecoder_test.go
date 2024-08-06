@@ -40,7 +40,8 @@ func BenchmarkUDPHeader(b *testing.B) {
 
 	b.ResetTimer()
 	for n := 0; n < b.N; n++ {
-		dc.decodeUDPHeader(octets)
+		_, err := dc.decodeUDPHeader(octets)
+		require.NoError(b, err)
 	}
 }
 
@@ -53,7 +54,7 @@ func TestIPv4Header(t *testing.T) {
 			0x00, 0x00, // identification
 			0x00, 0x00, // flags + frag offset
 			0x00,       // ttl
-			0x11,       // protocol; 0x11 = udp
+			0x11,       // protocol udp (0x11)
 			0x00, 0x00, // header checksum
 			0x7f, 0x00, 0x00, 0x01, // src ip
 			0x7f, 0x00, 0x00, 0x02, // dst ip
@@ -103,7 +104,7 @@ func TestIPv4HeaderSwitch(t *testing.T) {
 			0x00, 0x00, // identification
 			0x00, 0x00, // flags + frag offset
 			0x00,       // ttl
-			0x11,       // protocol; 0x11 = udp
+			0x11,       // protocol udp (0x11)
 			0x00, 0x00, // header checksum
 			0x7f, 0x00, 0x00, 0x01, // src ip
 			0x7f, 0x00, 0x00, 0x02, // dst ip
@@ -125,7 +126,7 @@ func TestIPv4HeaderSwitch(t *testing.T) {
 			0x00, 0x00, // identification
 			0x00, 0x00, // flags + frag offset
 			0x00,       // ttl
-			0x06,       // protocol; 0x06 = tcp
+			0x06,       // protocol tcp (0x06)
 			0x00, 0x00, // header checksum
 			0x7f, 0x00, 0x00, 0x01, // src ip
 			0x7f, 0x00, 0x00, 0x02, // dst ip

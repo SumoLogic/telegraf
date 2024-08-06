@@ -1,49 +1,79 @@
+//go:build windows
+
 package logger
 
 import (
 	"io"
+	"log"
 	"strings"
 
 	"github.com/influxdata/wlog"
-	"github.com/kardianos/service"
+	"golang.org/x/sys/windows/svc/eventlog"
 )
 
 const (
-	LogTargetEventlog = "eventlog"
+	eidInfo    = 1
+	eidWarning = 2
+	eidError   = 3
 )
 
-type eventLogger struct {
-	logger service.Logger
+type eventWriter struct {
+	logger *eventlog.Log
 }
 
-func (t *eventLogger) Write(b []byte) (n int, err error) {
+func (w *eventWriter) Write(b []byte) (int, error) {
 	loc := prefixRegex.FindIndex(b)
-	n = len(b)
+	n := len(b)
 	if loc == nil {
-		err = t.logger.Info(b)
-	} else if n > 2 { //skip empty log messages
+		return n, w.logger.Info(1, string(b))
+	}
+
+	//skip empty log messages
+	if n > 2 {
 		line := strings.Trim(string(b[loc[1]:]), " \t\r\n")
 		switch rune(b[loc[0]]) {
 		case 'I':
-			err = t.logger.Info(line)
+			return n, w.logger.Info(eidInfo, line)
 		case 'W':
-			err = t.logger.Warning(line)
+			return n, w.logger.Warning(eidWarning, line)
 		case 'E':
-			err = t.logger.Error(line)
+			return n, w.logger.Error(eidError, line)
 		}
 	}
 
-	return
+	return n, nil
 }
 
-type eventLoggerCreator struct {
-	serviceLogger service.Logger
+type eventLogger struct {
+	writer   io.Writer
+	eventlog *eventlog.Log
 }
 
-func (e *eventLoggerCreator) CreateLogger(config LogConfig) (io.Writer, error) {
-	return wlog.NewWriter(&eventLogger{logger: e.serviceLogger}), nil
+func (e *eventLogger) Write(b []byte) (int, error) {
+	return e.writer.Write(b)
 }
 
-func RegisterEventLogger(serviceLogger service.Logger) {
-	registerLogger(LogTargetEventlog, &eventLoggerCreator{serviceLogger: serviceLogger})
+func (e *eventLogger) Close() error {
+	return e.eventlog.Close()
+}
+
+func createEventLogger(name string) creator {
+	return func(Config) (io.WriteCloser, error) {
+		eventLog, err := eventlog.Open(name)
+		if err != nil {
+			log.Printf("E! An error occurred while initializing an event logger. %s", err)
+			return nil, err
+		}
+
+		writer := wlog.NewWriter(&eventWriter{logger: eventLog})
+		return &eventLogger{
+			writer:   writer,
+			eventlog: eventLog,
+		}, nil
+	}
+}
+
+func RegisterEventLogger(name string) error {
+	registerLogger("eventlog", createEventLogger(name))
+	return nil
 }

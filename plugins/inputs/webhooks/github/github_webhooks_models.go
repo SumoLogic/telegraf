@@ -1,8 +1,7 @@
 package github
 
 import (
-	"fmt"
-	"log"
+	"strconv"
 	"time"
 
 	"github.com/influxdata/telegraf"
@@ -96,9 +95,9 @@ func (s CommitCommentEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":   s.Repository.Stars,
@@ -107,10 +106,7 @@ func (s CommitCommentEvent) NewMetric() telegraf.Metric {
 		"commit":  s.Comment.Commit,
 		"comment": s.Comment.Body,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -126,9 +122,9 @@ func (s CreateEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":   s.Repository.Stars,
@@ -137,10 +133,7 @@ func (s CreateEvent) NewMetric() telegraf.Metric {
 		"ref":     s.Ref,
 		"refType": s.RefType,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -156,9 +149,9 @@ func (s DeleteEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":   s.Repository.Stars,
@@ -167,10 +160,7 @@ func (s DeleteEvent) NewMetric() telegraf.Metric {
 		"ref":     s.Ref,
 		"refType": s.RefType,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -185,9 +175,9 @@ func (s DeploymentEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":       s.Repository.Stars,
@@ -198,10 +188,7 @@ func (s DeploymentEvent) NewMetric() telegraf.Metric {
 		"environment": s.Deployment.Environment,
 		"description": s.Deployment.Description,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -217,9 +204,9 @@ func (s DeploymentStatusEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":          s.Repository.Stars,
@@ -232,10 +219,7 @@ func (s DeploymentStatusEvent) NewMetric() telegraf.Metric {
 		"depState":       s.DeploymentStatus.State,
 		"depDescription": s.DeploymentStatus.Description,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -250,9 +234,9 @@ func (s ForkEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":  s.Repository.Stars,
@@ -260,10 +244,7 @@ func (s ForkEvent) NewMetric() telegraf.Metric {
 		"issues": s.Repository.Issues,
 		"fork":   s.Forkee.Repository,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -279,19 +260,16 @@ func (s GollumEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":  s.Repository.Stars,
 		"forks":  s.Repository.Forks,
 		"issues": s.Repository.Issues,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -307,10 +285,10 @@ func (s IssueCommentEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
-		"issue":      fmt.Sprintf("%v", s.Issue.Number),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
+		"issue":      strconv.Itoa(s.Issue.Number),
 	}
 	f := map[string]interface{}{
 		"stars":    s.Repository.Stars,
@@ -320,10 +298,7 @@ func (s IssueCommentEvent) NewMetric() telegraf.Metric {
 		"comments": s.Issue.Comments,
 		"body":     s.Comment.Body,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -339,10 +314,10 @@ func (s IssuesEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
-		"issue":      fmt.Sprintf("%v", s.Issue.Number),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
+		"issue":      strconv.Itoa(s.Issue.Number),
 		"action":     s.Action,
 	}
 	f := map[string]interface{}{
@@ -352,10 +327,7 @@ func (s IssuesEvent) NewMetric() telegraf.Metric {
 		"title":    s.Issue.Title,
 		"comments": s.Issue.Comments,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -370,9 +342,9 @@ func (s MemberEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":           s.Repository.Stars,
@@ -381,10 +353,7 @@ func (s MemberEvent) NewMetric() telegraf.Metric {
 		"newMember":       s.Member.User,
 		"newMemberStatus": s.Member.Admin,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -400,17 +369,14 @@ func (s MembershipEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":  event,
 		"user":   s.Sender.User,
-		"admin":  fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":  strconv.FormatBool(s.Sender.Admin),
 		"action": s.Action,
 	}
 	f := map[string]interface{}{
 		"newMember":       s.Member.User,
 		"newMemberStatus": s.Member.Admin,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -424,19 +390,16 @@ func (s PageBuildEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":  s.Repository.Stars,
 		"forks":  s.Repository.Forks,
 		"issues": s.Repository.Issues,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -450,19 +413,16 @@ func (s PublicEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":  s.Repository.Stars,
 		"forks":  s.Repository.Forks,
 		"issues": s.Repository.Issues,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -479,10 +439,10 @@ func (s PullRequestEvent) NewMetric() telegraf.Metric {
 		"event":      event,
 		"action":     s.Action,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
-		"prNumber":   fmt.Sprintf("%v", s.PullRequest.Number),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
+		"prNumber":   strconv.Itoa(s.PullRequest.Number),
 	}
 	f := map[string]interface{}{
 		"stars":        s.Repository.Stars,
@@ -496,10 +456,7 @@ func (s PullRequestEvent) NewMetric() telegraf.Metric {
 		"deletions":    s.PullRequest.Deletions,
 		"changedFiles": s.PullRequest.ChangedFiles,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -515,10 +472,10 @@ func (s PullRequestReviewCommentEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
-		"prNumber":   fmt.Sprintf("%v", s.PullRequest.Number),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
+		"prNumber":   strconv.Itoa(s.PullRequest.Number),
 	}
 	f := map[string]interface{}{
 		"stars":        s.Repository.Stars,
@@ -534,10 +491,7 @@ func (s PullRequestReviewCommentEvent) NewMetric() telegraf.Metric {
 		"commentFile":  s.Comment.File,
 		"comment":      s.Comment.Comment,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -554,9 +508,9 @@ func (s PushEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":  s.Repository.Stars,
@@ -566,10 +520,7 @@ func (s PushEvent) NewMetric() telegraf.Metric {
 		"before": s.Before,
 		"after":  s.After,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -584,9 +535,9 @@ func (s ReleaseEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":   s.Repository.Stars,
@@ -594,10 +545,7 @@ func (s ReleaseEvent) NewMetric() telegraf.Metric {
 		"issues":  s.Repository.Issues,
 		"tagName": s.Release.TagName,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -611,19 +559,16 @@ func (s RepositoryEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":  s.Repository.Stars,
 		"forks":  s.Repository.Forks,
 		"issues": s.Repository.Issues,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -639,9 +584,9 @@ func (s StatusEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":  s.Repository.Stars,
@@ -650,10 +595,7 @@ func (s StatusEvent) NewMetric() telegraf.Metric {
 		"commit": s.Commit,
 		"state":  s.State,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -668,9 +610,9 @@ func (s TeamAddEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":    s.Repository.Stars,
@@ -678,10 +620,7 @@ func (s TeamAddEvent) NewMetric() telegraf.Metric {
 		"issues":   s.Repository.Issues,
 		"teamName": s.Team.Name,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }
 
@@ -695,18 +634,15 @@ func (s WatchEvent) NewMetric() telegraf.Metric {
 	t := map[string]string{
 		"event":      event,
 		"repository": s.Repository.Repository,
-		"private":    fmt.Sprintf("%v", s.Repository.Private),
+		"private":    strconv.FormatBool(s.Repository.Private),
 		"user":       s.Sender.User,
-		"admin":      fmt.Sprintf("%v", s.Sender.Admin),
+		"admin":      strconv.FormatBool(s.Sender.Admin),
 	}
 	f := map[string]interface{}{
 		"stars":  s.Repository.Stars,
 		"forks":  s.Repository.Forks,
 		"issues": s.Repository.Issues,
 	}
-	m, err := metric.New(meas, t, f, time.Now())
-	if err != nil {
-		log.Fatalf("Failed to create %v event", event)
-	}
+	m := metric.New(meas, t, f, time.Now())
 	return m
 }

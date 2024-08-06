@@ -1,30 +1,42 @@
-// +build windows
+//go:generate ../../../tools/readme_config_includer/generator
+//go:build windows
 
 package win_services
 
 import (
+	_ "embed"
+	"errors"
 	"fmt"
-	"os"
+	"io/fs"
+	"strings"
+	"syscall"
 
-	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/plugins/inputs"
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/mgr"
+
+	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/filter"
+	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
-type ServiceErr struct {
+//go:embed sample.conf
+var sampleConfig string
+
+type ServiceError struct {
 	Message string
 	Service string
 	Err     error
 }
 
-func (e *ServiceErr) Error() string {
-	return fmt.Sprintf("%s: '%s': %v", e.Message, e.Service, e.Err)
+func (e *ServiceError) Error() string {
+	return fmt.Sprintf("%s: %q: %v", e.Message, e.Service, e.Err)
 }
 
 func IsPermission(err error) bool {
-	if err, ok := err.(*ServiceErr); ok {
-		return os.IsPermission(err.Err)
+	var serviceErr *ServiceError
+	if errors.As(err, &serviceErr) {
+		return errors.Is(serviceErr, fs.ErrPermission)
 	}
 	return false
 }
@@ -58,8 +70,17 @@ func (m *WinSvcMgr) Disconnect() error {
 }
 
 func (m *WinSvcMgr) OpenService(name string) (WinService, error) {
-	return m.realMgr.OpenService(name)
+	serviceName, err := syscall.UTF16PtrFromString(name)
+	if err != nil {
+		return nil, fmt.Errorf("cannot convert service name %q: %w", name, err)
+	}
+	h, err := windows.OpenService(m.realMgr.Handle, serviceName, windows.GENERIC_READ)
+	if err != nil {
+		return nil, err
+	}
+	return &mgr.Service{Name: name, Handle: h}, nil
 }
+
 func (m *WinSvcMgr) ListServices() ([]string, error) {
 	return m.realMgr.ListServices()
 }
@@ -69,30 +90,23 @@ type MgProvider struct {
 }
 
 func (rmr *MgProvider) Connect() (WinServiceManager, error) {
-	scmgr, err := mgr.Connect()
+	h, err := windows.OpenSCManager(nil, nil, windows.GENERIC_READ)
 	if err != nil {
 		return nil, err
-	} else {
-		return &WinSvcMgr{scmgr}, nil
 	}
+	scmgr := &mgr.Mgr{Handle: h}
+	return &WinSvcMgr{scmgr}, nil
 }
 
-var sampleConfig = `
-  ## Names of the services to monitor. Leave empty to monitor all the available services on the host
-  service_names = [
-    "LanmanServer",
-    "TermService",
-  ]
-`
-
-var description = "Input plugin to report Windows services info."
-
-//WinServices is an implementation if telegraf.Input interface, providing info about Windows Services
+// WinServices is an implementation if telegraf.Input interface, providing info about Windows Services
 type WinServices struct {
 	Log telegraf.Logger
 
-	ServiceNames []string `toml:"service_names"`
-	mgrProvider  ManagerProvider
+	ServiceNames         []string `toml:"service_names"`
+	ServiceNamesExcluded []string `toml:"excluded_service_names"`
+	mgrProvider          ManagerProvider
+
+	servicesFilter filter.Filter
 }
 
 type ServiceInfo struct {
@@ -102,22 +116,39 @@ type ServiceInfo struct {
 	StartUpMode int
 }
 
-func (m *WinServices) Description() string {
-	return description
+func (*WinServices) SampleConfig() string {
+	return sampleConfig
 }
 
-func (m *WinServices) SampleConfig() string {
-	return sampleConfig
+func (m *WinServices) Init() error {
+	// For case insensitive comparison (see issue #8796) we need to transform the services
+	// to lowercase
+	servicesInclude := make([]string, 0, len(m.ServiceNames))
+	for _, s := range m.ServiceNames {
+		servicesInclude = append(servicesInclude, strings.ToLower(s))
+	}
+	servicesExclude := make([]string, 0, len(m.ServiceNamesExcluded))
+	for _, s := range m.ServiceNamesExcluded {
+		servicesExclude = append(servicesExclude, strings.ToLower(s))
+	}
+
+	f, err := filter.NewIncludeExcludeFilter(servicesInclude, servicesExclude)
+	if err != nil {
+		return err
+	}
+	m.servicesFilter = f
+
+	return nil
 }
 
 func (m *WinServices) Gather(acc telegraf.Accumulator) error {
 	scmgr, err := m.mgrProvider.Connect()
 	if err != nil {
-		return fmt.Errorf("Could not open service manager: %s", err)
+		return fmt.Errorf("could not open service manager: %w", err)
 	}
 	defer scmgr.Disconnect()
 
-	serviceNames, err := listServices(scmgr, m.ServiceNames)
+	serviceNames, err := m.listServices(scmgr)
 	if err != nil {
 		return err
 	}
@@ -152,23 +183,29 @@ func (m *WinServices) Gather(acc telegraf.Accumulator) error {
 }
 
 // listServices returns a list of services to gather.
-func listServices(scmgr WinServiceManager, userServices []string) ([]string, error) {
-	if len(userServices) != 0 {
-		return userServices, nil
-	}
-
+func (m *WinServices) listServices(scmgr WinServiceManager) ([]string, error) {
 	names, err := scmgr.ListServices()
 	if err != nil {
-		return nil, fmt.Errorf("Could not list services: %s", err)
+		return nil, fmt.Errorf("could not list services: %w", err)
 	}
-	return names, nil
+
+	var services []string
+	for _, name := range names {
+		// Compare case-insensitive. Use lowercase as we already converted the filter to use it.
+		n := strings.ToLower(name)
+		if m.servicesFilter.Match(n) {
+			services = append(services, name)
+		}
+	}
+
+	return services, nil
 }
 
 // collectServiceInfo gathers info about a service.
 func collectServiceInfo(scmgr WinServiceManager, serviceName string) (*ServiceInfo, error) {
 	srv, err := scmgr.OpenService(serviceName)
 	if err != nil {
-		return nil, &ServiceErr{
+		return nil, &ServiceError{
 			Message: "could not open service",
 			Service: serviceName,
 			Err:     err,
@@ -178,7 +215,7 @@ func collectServiceInfo(scmgr WinServiceManager, serviceName string) (*ServiceIn
 
 	srvStatus, err := srv.Query()
 	if err != nil {
-		return nil, &ServiceErr{
+		return nil, &ServiceError{
 			Message: "could not query service",
 			Service: serviceName,
 			Err:     err,
@@ -187,7 +224,7 @@ func collectServiceInfo(scmgr WinServiceManager, serviceName string) (*ServiceIn
 
 	srvCfg, err := srv.Config()
 	if err != nil {
-		return nil, &ServiceErr{
+		return nil, &ServiceError{
 			Message: "could not get config of service",
 			Service: serviceName,
 			Err:     err,

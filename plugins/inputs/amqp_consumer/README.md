@@ -1,23 +1,67 @@
 # AMQP Consumer Input Plugin
 
-This plugin provides a consumer for use with AMQP 0-9-1, a prominent implementation of this protocol being [RabbitMQ](https://www.rabbitmq.com/).
+This plugin provides a consumer for use with AMQP 0-9-1, a prominent
+implementation of this protocol being [RabbitMQ](https://www.rabbitmq.com/).
 
-Metrics are read from a topic exchange using the configured queue and binding_key.
+Metrics are read from a topic exchange using the configured queue and
+binding_key.
 
-Message payload should be formatted in one of the [Telegraf Data Formats](https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md).
+Message payload should be formatted in one of the [Telegraf Data
+Formats](../../../docs/DATA_FORMATS_INPUT.md).
 
 For an introduction to AMQP see:
-- https://www.rabbitmq.com/tutorials/amqp-concepts.html
-- https://www.rabbitmq.com/getstarted.html
 
-The following defaults are known to work with RabbitMQ:
+- [amqp - concepts](https://www.rabbitmq.com/tutorials/amqp-concepts.html)
+- [rabbitmq: getting started](https://www.rabbitmq.com/getstarted.html)
 
-```toml
+## Service Input <!-- @/docs/includes/service_input.md -->
+
+This plugin is a service input. Normal plugins gather metrics determined by the
+interval setting. Service plugins start a service to listens and waits for
+metrics or events to occur. Service plugins have two key differences from
+normal plugins:
+
+1. The global or plugin specific `interval` setting may not apply
+2. The CLI options of `--test`, `--test-wait`, and `--once` may not produce
+   output for this plugin
+
+## Global configuration options <!-- @/docs/includes/plugin_config.md -->
+
+In addition to the plugin-specific configuration settings, plugins support
+additional global and plugin configuration settings. These settings are used to
+modify metrics, tags, and field or create aliases and configure ordering, etc.
+See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
+
+[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+
+## Startup error behavior options <!-- @/docs/includes/startup_error_behavior.md -->
+
+In addition to the plugin-specific and global configuration settings the plugin
+supports options for specifying the behavior when experiencing startup errors
+using the `startup_error_behavior` setting. Available values are:
+
+- `error`:  Telegraf with stop and exit in case of startup errors. This is the
+            default behavior.
+- `ignore`: Telegraf will ignore startup errors for this plugin and disables it
+            but continues processing for all other plugins.
+- `retry`:  Telegraf will try to startup the plugin in every gather or write
+            cycle in case of startup errors. The plugin is disabled until
+            the startup succeeds.
+
+## Secret-store support
+
+This plugin supports secrets from secret-stores for the `username` and
+`password` option.
+See the [secret-store documentation][SECRETSTORE] for more details on how
+to use them.
+
+[SECRETSTORE]: ../../../docs/CONFIGURATION.md#secret-store-secrets
+
+## Configuration
+
+```toml @sample.conf
+# AMQP consumer plugin
 [[inputs.amqp_consumer]]
-  ## Broker to consume from.
-  ##   deprecated in 1.7; use the brokers option
-  # url = "amqp://localhost:5672/influxdb"
-
   ## Brokers to consume from.  If multiple brokers are specified a random broker
   ## will be selected anytime a connection is established.  This can be
   ## helpful for load balancing when not using a dedicated load balancer.
@@ -43,7 +87,7 @@ The following defaults are known to work with RabbitMQ:
   # exchange_arguments = { }
   # exchange_arguments = {"hash_property" = "timestamp"}
 
-  ## AMQP queue name
+  ## AMQP queue name.
   queue = "telegraf"
 
   ## AMQP queue durability can be "transient" or "durable".
@@ -52,6 +96,10 @@ The following defaults are known to work with RabbitMQ:
   ## If true, queue will be passively declared.
   # queue_passive = false
 
+  ## Additional arguments when consuming from Queue
+  # queue_consume_arguments = { }
+  # queue_consume_arguments = {"x-stream-offset" = "first"}
+
   ## A binding between the exchange and queue using this binding key is
   ## created.  If unset, no binding is created.
   binding_key = "#"
@@ -59,15 +107,20 @@ The following defaults are known to work with RabbitMQ:
   ## Maximum number of messages server should give to the worker.
   # prefetch_count = 50
 
-  ## Maximum messages to read from the broker that have not been written by an
-  ## output.  For best throughput set based on the number of metrics within
-  ## each message and the size of the output's metric_batch_size.
+  ## Max undelivered messages
+  ## This plugin uses tracking metrics, which ensure messages are read to
+  ## outputs before acknowledging them to the original broker to ensure data
+  ## is not lost. This option sets the maximum messages to read from the
+  ## broker that have not been written by an output.
   ##
-  ## For example, if each message from the queue contains 10 metrics and the
-  ## output metric_batch_size is 1000, setting this to 100 will ensure that a
-  ## full batch is collected and the write is triggered immediately without
-  ## waiting until the next flush_interval.
+  ## This value needs to be picked with awareness of the agent's
+  ## metric_batch_size value as well. Setting max undelivered messages too high
+  ## can result in a constant stream of data batches to the output. While
+  ## setting it too low may never flush the broker's messages.
   # max_undelivered_messages = 1000
+
+  ## Timeout for establishing the connection to a broker
+  # timeout = "30s"
 
   ## Auth method. PLAIN and EXTERNAL are supported
   ## Using EXTERNAL requires enabling the rabbitmq_auth_mechanism_ssl plugin as
@@ -81,9 +134,17 @@ The following defaults are known to work with RabbitMQ:
   ## Use TLS but skip chain & host verification
   # insecure_skip_verify = false
 
-  ## Content encoding for message payloads, can be set to "gzip" to or
-  ## "identity" to apply no encoding.
+  ## Content encoding for message payloads, can be set to
+  ## "gzip", "identity" or "auto"
+  ## - Use "gzip" to decode gzip
+  ## - Use "identity" to apply no encoding
+  ## - Use "auto" determine the encoding using the ContentEncoding header
   # content_encoding = "identity"
+
+  ## Maximum size of decoded message.
+  ## Acceptable units are B, KiB, KB, MiB, MB...
+  ## Without quotes and units, interpreted as size in bytes.
+  # max_decompression_size = "500MB"
 
   ## Data format to consume.
   ## Each data format has its own unique set of configuration options, read
@@ -91,3 +152,11 @@ The following defaults are known to work with RabbitMQ:
   ## https://github.com/influxdata/telegraf/blob/master/docs/DATA_FORMATS_INPUT.md
   data_format = "influx"
 ```
+
+## Metrics
+
+TODO
+
+## Example Output
+
+TODO

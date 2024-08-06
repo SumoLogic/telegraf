@@ -1,4 +1,4 @@
-// +build !linux
+//go:build !linux
 
 package wireless
 
@@ -12,7 +12,7 @@ func (w *Wireless) Init() error {
 	return nil
 }
 
-func (w *Wireless) Gather(acc telegraf.Accumulator) error {
+func (*Wireless) Gather(_ telegraf.Accumulator) error {
 	return nil
 }
 

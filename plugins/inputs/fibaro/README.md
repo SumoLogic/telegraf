@@ -1,11 +1,24 @@
 # Fibaro Input Plugin
 
-The Fibaro plugin makes HTTP calls to the Fibaro controller API to gather values of hooked devices.
-Those values could be true (1) or false (0) for switches, percentage for dimmers, temperature, etc.
+The Fibaro plugin makes HTTP calls to the Fibaro controller API to gather values
+of hooked devices. Those values could be true (1) or false (0) for switches,
+percentage for dimmers, temperature, etc.
 
-### Configuration:
+By default, this plugin supports HC2 devices. To support HC3 devices, please
+use the device type config option.
 
-```toml
+## Global configuration options <!-- @/docs/includes/plugin_config.md -->
+
+In addition to the plugin-specific configuration settings, plugins support
+additional global and plugin configuration settings. These settings are used to
+modify metrics, tags, and field or create aliases and configure ordering, etc.
+See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
+
+[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+
+## Configuration
+
+```toml @sample.conf
 # Read devices value(s) from a Fibaro controller
 [[inputs.fibaro]]
   ## Required Fibaro controller address/hostname.
@@ -18,9 +31,14 @@ Those values could be true (1) or false (0) for switches, percentage for dimmers
 
   ## Amount of time allowed to complete the HTTP request
   # timeout = "5s"
+
+  ## Fibaro Device Type
+  ## By default, this plugin will attempt to read using the HC2 API. For HC3
+  ## devices, set this to "HC3"
+  # device_type = "HC2"
 ```
 
-### Metrics:
+## Metrics
 
 - fibaro
   - tags:
@@ -36,10 +54,9 @@ Those values could be true (1) or false (0) for switches, percentage for dimmers
     - value (float)
     - value2 (float, when available from device)
 
+## Example Output
 
-### Example Output:
-
-```
+```text
 fibaro,deviceId=9,host=vm1,name=Fenêtre\ haute,room=Cuisine,section=Cuisine,type=com.fibaro.FGRM222 energy=2.04,power=0.7,value=99,value2=99 1529996807000000000
 fibaro,deviceId=10,host=vm1,name=Escaliers,room=Dégagement,section=Pièces\ communes,type=com.fibaro.binarySwitch value=0 1529996807000000000
 fibaro,deviceId=13,host=vm1,name=Porte\ fenêtre,room=Salon,section=Pièces\ communes,type=com.fibaro.FGRM222 energy=4.33,power=0.7,value=99,value2=99 1529996807000000000

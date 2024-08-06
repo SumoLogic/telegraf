@@ -1,4 +1,4 @@
-// selfstat is a package for tracking and collecting internal statistics
+// Package selfstat is a package for tracking and collecting internal statistics
 // about telegraf. Metrics can be registered using this package, and then
 // incremented or set within your code. If the inputs.internal plugin is enabled,
 // then all registered stats will be collected as they would by any other input
@@ -7,7 +7,6 @@ package selfstat
 
 import (
 	"hash/fnv"
-	"log"
 	"sort"
 	"sync"
 	"time"
@@ -80,8 +79,7 @@ func RegisterTiming(measurement, field string, tags map[string]string) Stat {
 func Metrics() []telegraf.Metric {
 	registry.mu.Lock()
 	now := time.Now()
-	metrics := make([]telegraf.Metric, len(registry.stats))
-	i := 0
+	metrics := make([]telegraf.Metric, 0, len(registry.stats))
 	for _, stats := range registry.stats {
 		if len(stats) > 0 {
 			var tags map[string]string
@@ -96,13 +94,8 @@ func Metrics() []telegraf.Metric {
 				fields[fieldname] = stat.Get()
 				j++
 			}
-			metric, err := metric.New(name, tags, fields, now)
-			if err != nil {
-				log.Printf("E! Error creating selfstat metric: %s", err)
-				continue
-			}
-			metrics[i] = metric
-			i++
+			m := metric.New(name, tags, fields, now)
+			metrics = append(metrics, m)
 		}
 	}
 	registry.mu.Unlock()
@@ -178,18 +171,15 @@ func (r *Registry) set(key uint64, s Stat) {
 	}
 
 	r.stats[key][s.FieldName()] = s
-	return
 }
 
 func key(measurement string, tags map[string]string) uint64 {
 	h := fnv.New64a()
 	h.Write([]byte(measurement))
 
-	tmp := make([]string, len(tags))
-	i := 0
+	tmp := make([]string, 0, len(tags))
 	for k, v := range tags {
-		tmp[i] = k + v
-		i++
+		tmp = append(tmp, k+v)
 	}
 	sort.Strings(tmp)
 

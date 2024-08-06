@@ -1,31 +1,32 @@
 package shim
 
 import (
-	"bufio"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/agent"
-	"github.com/influxdata/telegraf/plugins/parsers"
+	"github.com/influxdata/telegraf/models"
+	"github.com/influxdata/telegraf/plugins/parsers/influx"
 	"github.com/influxdata/telegraf/plugins/processors"
 )
 
 // AddProcessor adds the processor to the shim. Later calls to Run() will run this.
 func (s *Shim) AddProcessor(processor telegraf.Processor) error {
-	setLoggerOnPlugin(processor, s.Log())
+	models.SetLoggerOnPlugin(processor, s.Log())
 	p := processors.NewStreamingProcessorFromProcessor(processor)
 	return s.AddStreamingProcessor(p)
 }
 
 // AddStreamingProcessor adds the processor to the shim. Later calls to Run() will run this.
 func (s *Shim) AddStreamingProcessor(processor telegraf.StreamingProcessor) error {
-	setLoggerOnPlugin(processor, s.Log())
+	models.SetLoggerOnPlugin(processor, s.Log())
 	if p, ok := processor.(telegraf.Initializer); ok {
 		err := p.Init()
 		if err != nil {
-			return fmt.Errorf("failed to init input: %s", err)
+			return fmt.Errorf("failed to init input: %w", err)
 		}
 	}
 
@@ -37,12 +38,7 @@ func (s *Shim) RunProcessor() error {
 	acc := agent.NewAccumulator(s, s.metricCh)
 	acc.SetPrecision(time.Nanosecond)
 
-	parser, err := parsers.NewInfluxParser()
-	if err != nil {
-		return fmt.Errorf("Failed to create new parser: %w", err)
-	}
-
-	err = s.Processor.Start(acc)
+	err := s.Processor.Start(acc)
 	if err != nil {
 		return fmt.Errorf("failed to start processor: %w", err)
 	}
@@ -50,18 +46,32 @@ func (s *Shim) RunProcessor() error {
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 	go func() {
-		s.writeProcessedMetrics()
+		err := s.writeProcessedMetrics()
+		if err != nil {
+			s.log.Warn(err.Error())
+		}
 		wg.Done()
 	}()
 
-	scanner := bufio.NewScanner(s.stdin)
-	for scanner.Scan() {
-		m, err := parser.ParseLine(scanner.Text())
+	parser := influx.NewStreamParser(s.stdin)
+	for {
+		m, err := parser.Next()
 		if err != nil {
-			fmt.Fprintf(s.stderr, "Failed to parse metric: %s\b", err)
+			if errors.Is(err, influx.EOF) {
+				break // stream ended
+			}
+			var parseErr *influx.ParseError
+			if errors.As(err, &parseErr) {
+				fmt.Fprintf(s.stderr, "Failed to parse metric: %s\b", parseErr)
+				continue
+			}
+			fmt.Fprintf(s.stderr, "Failure during reading stdin: %s\b", err)
 			continue
 		}
-		s.Processor.Add(m, acc)
+
+		if err = s.Processor.Add(m, acc); err != nil {
+			fmt.Fprintf(s.stderr, "Failure during processing metric by processor: %v\b", err)
+		}
 	}
 
 	close(s.metricCh)

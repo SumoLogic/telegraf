@@ -1,27 +1,33 @@
 package models
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/internal"
+	logging "github.com/influxdata/telegraf/logger"
 	"github.com/influxdata/telegraf/selfstat"
 )
 
 const (
 	// Default size of metrics batch size.
-	DEFAULT_METRIC_BATCH_SIZE = 1000
+	DefaultMetricBatchSize = 1000
 
 	// Default number of metrics kept. It should be a multiple of batch size.
-	DEFAULT_METRIC_BUFFER_LIMIT = 10000
+	DefaultMetricBufferLimit = 10000
 )
 
 // OutputConfig containing name and filter
 type OutputConfig struct {
-	Name   string
-	Alias  string
-	Filter Filter
+	Name                 string
+	Alias                string
+	ID                   string
+	StartupErrorBehavior string
+	Filter               Filter
 
 	FlushInterval     time.Duration
 	FlushJitter       time.Duration
@@ -46,17 +52,20 @@ type RunningOutput struct {
 
 	MetricsFiltered selfstat.Stat
 	WriteTime       selfstat.Stat
+	StartupErrors   selfstat.Stat
 
 	BatchReady chan time.Time
 
 	buffer *Buffer
 	log    telegraf.Logger
 
+	started bool
+	retries uint64
+
 	aggMutex sync.Mutex
 }
 
 func NewRunningOutput(
-	name string,
 	output telegraf.Output,
 	config *OutputConfig,
 	batchSize int,
@@ -68,8 +77,8 @@ func NewRunningOutput(
 	}
 
 	writeErrorsRegister := selfstat.Register("write", "errors", tags)
-	logger := NewLogger("outputs", config.Name, config.Alias)
-	logger.OnErr(func() {
+	logger := logging.NewLogger("outputs", config.Name, config.Alias)
+	logger.RegisterErrorCallback(func() {
 		writeErrorsRegister.Incr(1)
 	})
 	SetLoggerOnPlugin(output, logger)
@@ -78,13 +87,13 @@ func NewRunningOutput(
 		bufferLimit = config.MetricBufferLimit
 	}
 	if bufferLimit == 0 {
-		bufferLimit = DEFAULT_METRIC_BUFFER_LIMIT
+		bufferLimit = DefaultMetricBufferLimit
 	}
 	if config.MetricBatchSize > 0 {
 		batchSize = config.MetricBatchSize
 	}
 	if batchSize == 0 {
-		batchSize = DEFAULT_METRIC_BATCH_SIZE
+		batchSize = DefaultMetricBatchSize
 	}
 
 	ro := &RunningOutput{
@@ -104,6 +113,11 @@ func NewRunningOutput(
 			"write_time_ns",
 			tags,
 		),
+		StartupErrors: selfstat.Register(
+			"write",
+			"startup_errors",
+			tags,
+		),
 		log: logger,
 	}
 
@@ -114,64 +128,115 @@ func (r *RunningOutput) LogName() string {
 	return logName("outputs", r.Config.Name, r.Config.Alias)
 }
 
-func (ro *RunningOutput) metricFiltered(metric telegraf.Metric) {
-	ro.MetricsFiltered.Incr(1)
+func (r *RunningOutput) metricFiltered(metric telegraf.Metric) {
+	r.MetricsFiltered.Incr(1)
 	metric.Drop()
 }
 
+func (r *RunningOutput) ID() string {
+	if p, ok := r.Output.(telegraf.PluginWithID); ok {
+		return p.ID()
+	}
+	return r.Config.ID
+}
+
 func (r *RunningOutput) Init() error {
+	switch r.Config.StartupErrorBehavior {
+	case "", "error", "retry", "ignore":
+	default:
+		return fmt.Errorf("invalid 'startup_error_behavior' setting %q", r.Config.StartupErrorBehavior)
+	}
+
 	if p, ok := r.Output.(telegraf.Initializer); ok {
 		err := p.Init()
 		if err != nil {
 			return err
 		}
-
 	}
 	return nil
 }
 
+func (r *RunningOutput) Connect() error {
+	// Try to connect and exit early on success
+	err := r.Output.Connect()
+	if err == nil {
+		r.started = true
+		return nil
+	}
+	r.StartupErrors.Incr(1)
+
+	// Check if the plugin reports a retry-able error, otherwise we exit.
+	var serr *internal.StartupError
+	if !errors.As(err, &serr) || !serr.Retry {
+		return err
+	}
+
+	// Handle the retry-able error depending on the configured behavior
+	switch r.Config.StartupErrorBehavior {
+	case "", "error": // fall-trough to return the actual error
+	case "retry":
+		r.log.Infof("Connect failed: %v; retrying...", err)
+		return nil
+	case "ignore":
+		return &internal.FatalError{Err: serr}
+	default:
+		r.log.Errorf("Invalid 'startup_error_behavior' setting %q", r.Config.StartupErrorBehavior)
+	}
+
+	return err
+}
+
+// Close closes the output
+func (r *RunningOutput) Close() {
+	if err := r.Output.Close(); err != nil {
+		r.log.Errorf("Error closing output: %v", err)
+	}
+}
+
 // AddMetric adds a metric to the output.
-//
 // Takes ownership of metric
-func (ro *RunningOutput) AddMetric(metric telegraf.Metric) {
-	if ok := ro.Config.Filter.Select(metric); !ok {
-		ro.metricFiltered(metric)
+func (r *RunningOutput) AddMetric(metric telegraf.Metric) {
+	ok, err := r.Config.Filter.Select(metric)
+	if err != nil {
+		r.log.Errorf("filtering failed: %v", err)
+	} else if !ok {
+		r.metricFiltered(metric)
 		return
 	}
 
-	ro.Config.Filter.Modify(metric)
+	r.Config.Filter.Modify(metric)
 	if len(metric.FieldList()) == 0 {
-		ro.metricFiltered(metric)
+		r.metricFiltered(metric)
 		return
 	}
 
-	if output, ok := ro.Output.(telegraf.AggregatingOutput); ok {
-		ro.aggMutex.Lock()
+	if output, ok := r.Output.(telegraf.AggregatingOutput); ok {
+		r.aggMutex.Lock()
 		output.Add(metric)
-		ro.aggMutex.Unlock()
+		r.aggMutex.Unlock()
 		return
 	}
 
-	if len(ro.Config.NameOverride) > 0 {
-		metric.SetName(ro.Config.NameOverride)
+	if len(r.Config.NameOverride) > 0 {
+		metric.SetName(r.Config.NameOverride)
 	}
 
-	if len(ro.Config.NamePrefix) > 0 {
-		metric.AddPrefix(ro.Config.NamePrefix)
+	if len(r.Config.NamePrefix) > 0 {
+		metric.AddPrefix(r.Config.NamePrefix)
 	}
 
-	if len(ro.Config.NameSuffix) > 0 {
-		metric.AddSuffix(ro.Config.NameSuffix)
+	if len(r.Config.NameSuffix) > 0 {
+		metric.AddSuffix(r.Config.NameSuffix)
 	}
 
-	dropped := ro.buffer.Add(metric)
-	atomic.AddInt64(&ro.droppedMetrics, int64(dropped))
+	dropped := r.buffer.Add(metric)
+	atomic.AddInt64(&r.droppedMetrics, int64(dropped))
 
-	count := atomic.AddInt64(&ro.newMetricsCount, 1)
-	if count == int64(ro.MetricBatchSize) {
-		atomic.StoreInt64(&ro.newMetricsCount, 0)
+	count := atomic.AddInt64(&r.newMetricsCount, 1)
+	if count == int64(r.MetricBatchSize) {
+		atomic.StoreInt64(&r.newMetricsCount, 0)
 		select {
-		case ro.BatchReady <- time.Now():
+		case r.BatchReady <- time.Now():
 		default:
 		}
 	}
@@ -179,63 +244,82 @@ func (ro *RunningOutput) AddMetric(metric telegraf.Metric) {
 
 // Write writes all metrics to the output, stopping when all have been sent on
 // or error.
-func (ro *RunningOutput) Write() error {
-	if output, ok := ro.Output.(telegraf.AggregatingOutput); ok {
-		ro.aggMutex.Lock()
-		metrics := output.Push()
-		ro.buffer.Add(metrics...)
-		output.Reset()
-		ro.aggMutex.Unlock()
+func (r *RunningOutput) Write() error {
+	// Try to connect if we are not yet started up
+	if !r.started {
+		r.retries++
+		if err := r.Output.Connect(); err != nil {
+			var serr *internal.StartupError
+			if !errors.As(err, &serr) || !serr.Retry || !serr.Partial {
+				r.StartupErrors.Incr(1)
+				return internal.ErrNotConnected
+			}
+			r.log.Debugf("Partially connected after %d attempts", r.retries)
+		} else {
+			r.started = true
+			r.log.Debugf("Successfully connected after %d attempts", r.retries)
+		}
 	}
 
-	atomic.StoreInt64(&ro.newMetricsCount, 0)
+	if output, ok := r.Output.(telegraf.AggregatingOutput); ok {
+		r.aggMutex.Lock()
+		metrics := output.Push()
+		r.buffer.Add(metrics...)
+		output.Reset()
+		r.aggMutex.Unlock()
+	}
+
+	atomic.StoreInt64(&r.newMetricsCount, 0)
 
 	// Only process the metrics in the buffer now.  Metrics added while we are
 	// writing will be sent on the next call.
-	nBuffer := ro.buffer.Len()
-	nBatches := nBuffer/ro.MetricBatchSize + 1
+	nBuffer := r.buffer.Len()
+	nBatches := nBuffer/r.MetricBatchSize + 1
 	for i := 0; i < nBatches; i++ {
-		batch := ro.buffer.Batch(ro.MetricBatchSize)
+		batch := r.buffer.Batch(r.MetricBatchSize)
 		if len(batch) == 0 {
 			break
 		}
 
-		err := ro.write(batch)
+		err := r.writeMetrics(batch)
 		if err != nil {
-			ro.buffer.Reject(batch)
+			r.buffer.Reject(batch)
 			return err
 		}
-		ro.buffer.Accept(batch)
+		r.buffer.Accept(batch)
 	}
 	return nil
 }
 
 // WriteBatch writes a single batch of metrics to the output.
-func (ro *RunningOutput) WriteBatch() error {
-	batch := ro.buffer.Batch(ro.MetricBatchSize)
+func (r *RunningOutput) WriteBatch() error {
+	// Try to connect if we are not yet started up
+	if !r.started {
+		r.retries++
+		if err := r.Output.Connect(); err != nil {
+			r.StartupErrors.Incr(1)
+			return internal.ErrNotConnected
+		}
+		r.started = true
+		r.log.Debugf("Successfully connected after %d attempts", r.retries)
+	}
+
+	batch := r.buffer.Batch(r.MetricBatchSize)
 	if len(batch) == 0 {
 		return nil
 	}
 
-	err := ro.write(batch)
+	err := r.writeMetrics(batch)
 	if err != nil {
-		ro.buffer.Reject(batch)
+		r.buffer.Reject(batch)
 		return err
 	}
-	ro.buffer.Accept(batch)
+	r.buffer.Accept(batch)
 
 	return nil
 }
 
-// Close closes the output
-func (r *RunningOutput) Close() {
-	err := r.Output.Close()
-	if err != nil {
-		r.log.Errorf("Error closing output: %v", err)
-	}
-}
-
-func (r *RunningOutput) write(metrics []telegraf.Metric) error {
+func (r *RunningOutput) writeMetrics(metrics []telegraf.Metric) error {
 	dropped := atomic.LoadInt64(&r.droppedMetrics)
 	if dropped > 0 {
 		r.log.Warnf("Metric buffer overflow; %d metrics have been dropped", dropped)

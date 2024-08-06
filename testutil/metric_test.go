@@ -18,7 +18,7 @@ func TestRequireMetricEqual(t *testing.T) {
 		{
 			name: "equal metrics should be equal",
 			got: func() telegraf.Metric {
-				m, _ := metric.New(
+				m := metric.New(
 					"test",
 					map[string]string{
 						"t1": "v1",
@@ -34,7 +34,7 @@ func TestRequireMetricEqual(t *testing.T) {
 				return m
 			}(),
 			want: func() telegraf.Metric {
-				m, _ := metric.New(
+				m := metric.New(
 					"test",
 					map[string]string{
 						"t1": "v1",
@@ -101,6 +101,159 @@ func TestRequireMetricsEqual(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			RequireMetricsEqual(t, tt.want, tt.got, tt.opts...)
+		})
+	}
+}
+
+func TestRequireMetricsSubset(t *testing.T) {
+	tests := []struct {
+		name string
+		got  []telegraf.Metric
+		want []telegraf.Metric
+		opts []cmp.Option
+	}{
+		{
+			name: "subset of metrics",
+			got: []telegraf.Metric{
+				MustMetric(
+					"cpu",
+					map[string]string{},
+					map[string]interface{}{"value": float64(3.14)},
+					time.Unix(0, 0),
+				),
+				MustMetric(
+					"net",
+					map[string]string{},
+					map[string]interface{}{"value": int64(42)},
+					time.Unix(0, 0),
+				),
+				MustMetric(
+					"superfluous",
+					map[string]string{},
+					map[string]interface{}{"value": true},
+					time.Unix(0, 0),
+				),
+			},
+			want: []telegraf.Metric{
+				MustMetric(
+					"net",
+					map[string]string{},
+					map[string]interface{}{"value": int64(42)},
+					time.Unix(0, 0),
+				),
+				MustMetric(
+					"cpu",
+					map[string]string{},
+					map[string]interface{}{"value": float64(3.14)},
+					time.Unix(0, 0),
+				),
+			},
+			opts: []cmp.Option{SortMetrics()},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			RequireMetricsSubset(t, tt.want, tt.got, tt.opts...)
+		})
+	}
+}
+
+func TestRequireMetricsStructureEqual(t *testing.T) {
+	tests := []struct {
+		name string
+		got  []telegraf.Metric
+		want []telegraf.Metric
+		opts []cmp.Option
+	}{
+		{
+			name: "compare structure",
+			got: []telegraf.Metric{
+				MustMetric(
+					"cpu",
+					map[string]string{},
+					map[string]interface{}{"value": float64(3.14)},
+					time.Unix(0, 0),
+				),
+				MustMetric(
+					"net",
+					map[string]string{},
+					map[string]interface{}{"value": int64(42)},
+					time.Unix(0, 0),
+				),
+			},
+			want: []telegraf.Metric{
+				MustMetric(
+					"net",
+					map[string]string{},
+					map[string]interface{}{"value": int64(0)},
+					time.Unix(0, 0),
+				),
+				MustMetric(
+					"cpu",
+					map[string]string{},
+					map[string]interface{}{"value": float64(0)},
+					time.Unix(0, 0),
+				),
+			},
+			opts: []cmp.Option{SortMetrics()},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			RequireMetricsStructureEqual(t, tt.want, tt.got, tt.opts...)
+		})
+	}
+}
+
+func TestRequireMetricsStructureSubset(t *testing.T) {
+	tests := []struct {
+		name string
+		got  []telegraf.Metric
+		want []telegraf.Metric
+		opts []cmp.Option
+	}{
+		{
+			name: "subset of metric structure",
+			got: []telegraf.Metric{
+				MustMetric(
+					"cpu",
+					map[string]string{},
+					map[string]interface{}{"value": float64(3.14)},
+					time.Unix(0, 0),
+				),
+				MustMetric(
+					"net",
+					map[string]string{},
+					map[string]interface{}{"value": int64(42)},
+					time.Unix(0, 0),
+				),
+				MustMetric(
+					"superfluous",
+					map[string]string{},
+					map[string]interface{}{"value": true},
+					time.Unix(0, 0),
+				),
+			},
+			want: []telegraf.Metric{
+				MustMetric(
+					"net",
+					map[string]string{},
+					map[string]interface{}{"value": int64(0)},
+					time.Unix(0, 0),
+				),
+				MustMetric(
+					"cpu",
+					map[string]string{},
+					map[string]interface{}{"value": float64(0)},
+					time.Unix(0, 0),
+				),
+			},
+			opts: []cmp.Option{SortMetrics()},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			RequireMetricsStructureSubset(t, tt.want, tt.got, tt.opts...)
 		})
 	}
 }

@@ -1,8 +1,11 @@
+//go:generate ../../../tools/readme_config_includer/generator
 package nginx_sts
 
 import (
 	"bufio"
+	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -12,40 +15,24 @@ import (
 	"time"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/internal"
+	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
+//go:embed sample.conf
+var sampleConfig string
+
 type NginxSTS struct {
-	Urls            []string          `toml:"urls"`
-	ResponseTimeout internal.Duration `toml:"response_timeout"`
+	Urls            []string        `toml:"urls"`
+	ResponseTimeout config.Duration `toml:"response_timeout"`
 	tls.ClientConfig
 
 	client *http.Client
 }
 
-var sampleConfig = `
-  ## An array of ngx_http_status_module or status URI to gather stats.
-  urls = ["http://localhost/status"]
-
-  ## HTTP response timeout (default: 5s)
-  response_timeout = "5s"
-
-  ## Optional TLS Config
-  # tls_ca = "/etc/telegraf/ca.pem"
-  # tls_cert = "/etc/telegraf/cert.pem"
-  # tls_key = "/etc/telegraf/key.pem"
-  ## Use TLS but skip chain & host verification
-  # insecure_skip_verify = false
-`
-
-func (n *NginxSTS) SampleConfig() string {
+func (*NginxSTS) SampleConfig() string {
 	return sampleConfig
-}
-
-func (n *NginxSTS) Description() string {
-	return "Read Nginx virtual host traffic status module information (nginx-module-sts)"
 }
 
 func (n *NginxSTS) Gather(acc telegraf.Accumulator) error {
@@ -65,7 +52,7 @@ func (n *NginxSTS) Gather(acc telegraf.Accumulator) error {
 	for _, u := range n.Urls {
 		addr, err := url.Parse(u)
 		if err != nil {
-			acc.AddError(fmt.Errorf("Unable to parse address '%s': %s", u, err))
+			acc.AddError(fmt.Errorf("unable to parse address %q: %w", u, err))
 			continue
 		}
 
@@ -81,8 +68,8 @@ func (n *NginxSTS) Gather(acc telegraf.Accumulator) error {
 }
 
 func (n *NginxSTS) createHTTPClient() (*http.Client, error) {
-	if n.ResponseTimeout.Duration < time.Second {
-		n.ResponseTimeout.Duration = time.Second * 5
+	if n.ResponseTimeout < config.Duration(time.Second) {
+		n.ResponseTimeout = config.Duration(time.Second * 5)
 	}
 
 	tlsConfig, err := n.ClientConfig.TLSConfig()
@@ -94,7 +81,7 @@ func (n *NginxSTS) createHTTPClient() (*http.Client, error) {
 		Transport: &http.Transport{
 			TLSClientConfig: tlsConfig,
 		},
-		Timeout: n.ResponseTimeout.Duration,
+		Timeout: time.Duration(n.ResponseTimeout),
 	}
 
 	return client, nil
@@ -103,7 +90,7 @@ func (n *NginxSTS) createHTTPClient() (*http.Client, error) {
 func (n *NginxSTS) gatherURL(addr *url.URL, acc telegraf.Accumulator) error {
 	resp, err := n.client.Get(addr.String())
 	if err != nil {
-		return fmt.Errorf("error making HTTP request to %s: %s", addr.String(), err)
+		return fmt.Errorf("error making HTTP request to %q: %w", addr.String(), err)
 	}
 
 	defer resp.Body.Close()
@@ -181,7 +168,7 @@ func gatherStatusURL(r *bufio.Reader, tags map[string]string, acc telegraf.Accum
 	dec := json.NewDecoder(r)
 	status := &NginxSTSResponse{}
 	if err := dec.Decode(status); err != nil {
-		return fmt.Errorf("Error while decoding JSON response")
+		return errors.New("error while decoding JSON response")
 	}
 
 	acc.AddFields("nginx_sts_connections", map[string]interface{}{

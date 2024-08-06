@@ -1,13 +1,14 @@
-package jsonV1
+package json_v1
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/influxdata/telegraf/plugins/inputs/zipkin/codec"
-	"github.com/openzipkin/zipkin-go-opentracing/thrift/gen-go/zipkincore"
+	"github.com/influxdata/telegraf/plugins/inputs/zipkin/codec/thrift/gen-go/zipkincore"
 )
 
 // JSON decodes spans from  bodies `POST`ed to the spans endpoint
@@ -21,12 +22,12 @@ func (j *JSON) Decode(octets []byte) ([]codec.Span, error) {
 		return nil, err
 	}
 
-	res := make([]codec.Span, len(spans))
+	res := make([]codec.Span, 0, len(spans))
 	for i := range spans {
 		if err := spans[i].Validate(); err != nil {
 			return nil, err
 		}
-		res[i] = &spans[i]
+		res = append(res, &spans[i])
 	}
 	return res, nil
 }
@@ -65,14 +66,14 @@ func (s *span) Validate() error {
 
 func (s *span) Trace() (string, error) {
 	if s.TraceID == "" {
-		return "", fmt.Errorf("Trace ID cannot be null")
+		return "", errors.New("trace ID cannot be null")
 	}
 	return TraceIDFromString(s.TraceID)
 }
 
 func (s *span) SpanID() (string, error) {
 	if s.ID == "" {
-		return "", fmt.Errorf("Span ID cannot be null")
+		return "", errors.New("span ID cannot be null")
 	}
 	return IDFromString(s.ID)
 }
@@ -89,23 +90,23 @@ func (s *span) Name() string {
 }
 
 func (s *span) Annotations() []codec.Annotation {
-	res := make([]codec.Annotation, len(s.Anno))
+	res := make([]codec.Annotation, 0, len(s.Anno))
 	for i := range s.Anno {
-		res[i] = &s.Anno[i]
+		res = append(res, &s.Anno[i])
 	}
 	return res
 }
 
 func (s *span) BinaryAnnotations() ([]codec.BinaryAnnotation, error) {
-	res := make([]codec.BinaryAnnotation, len(s.BAnno))
+	res := make([]codec.BinaryAnnotation, 0, len(s.BAnno))
 	for i, a := range s.BAnno {
 		if a.Key() != "" && a.Value() == "" {
-			return nil, fmt.Errorf("No value for key %s at binaryAnnotations[%d]", a.K, i)
+			return nil, fmt.Errorf("no value for key %s at binaryAnnotations[%d]", a.K, i)
 		}
 		if a.Value() != "" && a.Key() == "" {
-			return nil, fmt.Errorf("No key at binaryAnnotations[%d]", i)
+			return nil, fmt.Errorf("no key at binaryAnnotations[%d]", i)
 		}
-		res[i] = &s.BAnno[i]
+		res = append(res, &s.BAnno[i])
 	}
 	return res, nil
 }
@@ -234,7 +235,7 @@ func TraceIDFromString(s string) (string, error) {
 		}
 	}
 	if hi == 0 {
-		return fmt.Sprintf("%x", lo), nil
+		return strconv.FormatUint(lo, 16), nil
 	}
 	return fmt.Sprintf("%x%016x", hi, lo), nil
 }

@@ -5,15 +5,18 @@ import (
 	"time"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/plugins/serializers/carbon2"
-	"github.com/influxdata/telegraf/plugins/serializers/graphite"
-	"github.com/influxdata/telegraf/plugins/serializers/influx"
-	"github.com/influxdata/telegraf/plugins/serializers/json"
-	"github.com/influxdata/telegraf/plugins/serializers/nowmetric"
-	"github.com/influxdata/telegraf/plugins/serializers/prometheus"
-	"github.com/influxdata/telegraf/plugins/serializers/splunkmetric"
-	"github.com/influxdata/telegraf/plugins/serializers/wavefront"
 )
+
+// Creator is the function to create a new serializer
+type Creator func() Serializer
+
+// Serializers contains the registry of all known serializers (following the new style)
+var Serializers = map[string]Creator{}
+
+// Add adds a serializer to the registry. Usually this function is called in the plugin's init function
+func Add(name string, creator Creator) {
+	Serializers[name] = creator
+}
 
 // SerializerOutput is an interface for output plugins that are able to
 // serialize telegraf metrics into arbitrary data formats.
@@ -42,20 +45,44 @@ type Serializer interface {
 	SerializeBatch(metrics []telegraf.Metric) ([]byte, error)
 }
 
+// SerializerCompatibility is an interface for backward-compatible initialization of serializers
+type SerializerCompatibility interface {
+	// InitFromConfig sets the serializers internal variables from the old-style config
+	InitFromConfig(config *Config) error
+}
+
 // Config is a struct that covers the data types needed for all serializer types,
 // and can be used to instantiate _any_ of the serializers.
 type Config struct {
-	// Dataformat can be one of the serializer types listed in NewSerializer.
+	// DataFormat can be one of the serializer types listed in NewSerializer.
 	DataFormat string `toml:"data_format"`
 
 	// Carbon2 metric format.
 	Carbon2Format string `toml:"carbon2_format"`
 
+	// Character used for metric name sanitization in Carbon2.
+	Carbon2SanitizeReplaceChar string `toml:"carbon2_sanitize_replace_char"`
+
+	// Separator for CSV
+	CSVSeparator string `toml:"csv_separator"`
+
+	// Output a CSV header for naming the columns
+	CSVHeader bool `toml:"csv_header"`
+
+	// Prefix the tag and field columns for CSV format
+	CSVPrefix bool `toml:"csv_column_prefix"`
+
 	// Support tags in graphite protocol
 	GraphiteTagSupport bool `toml:"graphite_tag_support"`
 
+	// Support tags which follow the spec
+	GraphiteTagSanitizeMode string `toml:"graphite_tag_sanitize_mode"`
+
 	// Character for separating metric name and field for Graphite tags
 	GraphiteSeparator string `toml:"graphite_separator"`
+
+	// Regex string
+	GraphiteStrictRegex string `toml:"graphite_strict_sanitize_regex"`
 
 	// Maximum line length in bytes; influx format only
 	InfluxMaxLineBytes int `toml:"influx_max_line_bytes"`
@@ -66,6 +93,9 @@ type Config struct {
 
 	// Support unsigned integer output; influx format only
 	InfluxUintSupport bool `toml:"influx_uint_support"`
+
+	// Omit timestamp from output; influx format only
+	InfluxOmitTimestamp bool `toml:"influx_omit_timestamp"`
 
 	// Prefix to add to all measurements, only supports Graphite
 	Prefix string `toml:"prefix"`
@@ -80,11 +110,24 @@ type Config struct {
 	// Timestamp units to use for JSON formatted output
 	TimestampUnits time.Duration `toml:"timestamp_units"`
 
+	// Timestamp format to use for JSON and CSV formatted output
+	TimestampFormat string `toml:"timestamp_format"`
+
+	// Transformation as JSONata expression to use for JSON formatted output
+	Transformation string `toml:"transformation"`
+
+	// Field filter for interpreting data as nested JSON for JSON serializer
+	JSONNestedFieldInclude []string `toml:"json_nested_fields_include"`
+	JSONNestedFieldExclude []string `toml:"json_nested_fields_exclude"`
+
 	// Include HEC routing fields for splunkmetric output
 	HecRouting bool `toml:"hec_routing"`
 
 	// Enable Splunk MultiMetric output (Splunk 8.0+)
 	SplunkmetricMultiMetric bool `toml:"splunkmetric_multi_metric"`
+
+	// Omit the Splunk Event "metric" tag
+	SplunkmetricOmitEventTag bool `toml:"splunkmetric_omit_event_tag"`
 
 	// Point tags to use as the source name for Wavefront (if none found, host will be used).
 	WavefrontSourceOverride []string `toml:"wavefront_source_override"`
@@ -92,6 +135,9 @@ type Config struct {
 	// Use Strict rules to sanitize metric and tag names from invalid characters for Wavefront
 	// When enabled forward slash (/) and comma (,) will be accepted
 	WavefrontUseStrict bool `toml:"wavefront_use_strict"`
+
+	// Convert "_" in prefixes to "." for Wavefront
+	WavefrontDisablePrefixConversion bool `toml:"wavefront_disable_prefix_conversion"`
 
 	// Include the metric timestamp on each sample.
 	PrometheusExportTimestamp bool `toml:"prometheus_export_timestamp"`
@@ -103,120 +149,25 @@ type Config struct {
 	// Output string fields as metric labels; when false string fields are
 	// discarded.
 	PrometheusStringAsLabel bool `toml:"prometheus_string_as_label"`
+
+	// Encode metrics without HELP metadata. This helps reduce the payload size.
+	PrometheusCompactEncoding bool `toml:"prometheus_compact_encoding"`
 }
 
 // NewSerializer a Serializer interface based on the given config.
 func NewSerializer(config *Config) (Serializer, error) {
-	var err error
-	var serializer Serializer
-	switch config.DataFormat {
-	case "influx":
-		serializer, err = NewInfluxSerializerConfig(config)
-	case "graphite":
-		serializer, err = NewGraphiteSerializer(config.Prefix, config.Template, config.GraphiteTagSupport, config.GraphiteSeparator, config.Templates)
-	case "json":
-		serializer, err = NewJsonSerializer(config.TimestampUnits)
-	case "splunkmetric":
-		serializer, err = NewSplunkmetricSerializer(config.HecRouting, config.SplunkmetricMultiMetric)
-	case "nowmetric":
-		serializer, err = NewNowSerializer()
-	case "carbon2":
-		serializer, err = NewCarbon2Serializer(config.Carbon2Format)
-	case "wavefront":
-		serializer, err = NewWavefrontSerializer(config.Prefix, config.WavefrontUseStrict, config.WavefrontSourceOverride)
-	case "prometheus":
-		serializer, err = NewPrometheusSerializer(config)
-	default:
-		err = fmt.Errorf("Invalid data format: %s", config.DataFormat)
+	creator, found := Serializers[config.DataFormat]
+	if !found {
+		return nil, fmt.Errorf("invalid data format: %s", config.DataFormat)
 	}
+
+	// Try to create new-style serializers the old way...
+	serializer := creator()
+	p, ok := serializer.(SerializerCompatibility)
+	if !ok {
+		return nil, fmt.Errorf("serializer for %q cannot be created the old way", config.DataFormat)
+	}
+	err := p.InitFromConfig(config)
+
 	return serializer, err
-}
-
-func NewPrometheusSerializer(config *Config) (Serializer, error) {
-	exportTimestamp := prometheus.NoExportTimestamp
-	if config.PrometheusExportTimestamp {
-		exportTimestamp = prometheus.ExportTimestamp
-	}
-
-	sortMetrics := prometheus.NoSortMetrics
-	if config.PrometheusExportTimestamp {
-		sortMetrics = prometheus.SortMetrics
-	}
-
-	stringAsLabels := prometheus.DiscardStrings
-	if config.PrometheusStringAsLabel {
-		stringAsLabels = prometheus.StringAsLabel
-	}
-
-	return prometheus.NewSerializer(prometheus.FormatConfig{
-		TimestampExport: exportTimestamp,
-		MetricSortOrder: sortMetrics,
-		StringHandling:  stringAsLabels,
-	})
-}
-
-func NewWavefrontSerializer(prefix string, useStrict bool, sourceOverride []string) (Serializer, error) {
-	return wavefront.NewSerializer(prefix, useStrict, sourceOverride)
-}
-
-func NewJsonSerializer(timestampUnits time.Duration) (Serializer, error) {
-	return json.NewSerializer(timestampUnits)
-}
-
-func NewCarbon2Serializer(carbon2format string) (Serializer, error) {
-	return carbon2.NewSerializer(carbon2format)
-}
-
-func NewSplunkmetricSerializer(splunkmetric_hec_routing bool, splunkmetric_multimetric bool) (Serializer, error) {
-	return splunkmetric.NewSerializer(splunkmetric_hec_routing, splunkmetric_multimetric)
-}
-
-func NewNowSerializer() (Serializer, error) {
-	return nowmetric.NewSerializer()
-}
-
-func NewInfluxSerializerConfig(config *Config) (Serializer, error) {
-	var sort influx.FieldSortOrder
-	if config.InfluxSortFields {
-		sort = influx.SortFields
-	}
-
-	var typeSupport influx.FieldTypeSupport
-	if config.InfluxUintSupport {
-		typeSupport = typeSupport + influx.UintSupport
-	}
-
-	s := influx.NewSerializer()
-	s.SetMaxLineBytes(config.InfluxMaxLineBytes)
-	s.SetFieldSortOrder(sort)
-	s.SetFieldTypeSupport(typeSupport)
-	return s, nil
-}
-
-func NewInfluxSerializer() (Serializer, error) {
-	return influx.NewSerializer(), nil
-}
-
-func NewGraphiteSerializer(prefix, template string, tag_support bool, separator string, templates []string) (Serializer, error) {
-	graphiteTemplates, defaultTemplate, err := graphite.InitGraphiteTemplates(templates)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if defaultTemplate != "" {
-		template = defaultTemplate
-	}
-
-	if separator == "" {
-		separator = "."
-	}
-
-	return &graphite.GraphiteSerializer{
-		Prefix:     prefix,
-		Template:   template,
-		TagSupport: tag_support,
-		Separator:  separator,
-		Templates:  graphiteTemplates,
-	}, nil
 }

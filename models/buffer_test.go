@@ -4,10 +4,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/metric"
 	"github.com/influxdata/telegraf/testutil"
-	"github.com/stretchr/testify/require"
 )
 
 type MockMetric struct {
@@ -34,7 +35,7 @@ func Metric() telegraf.Metric {
 }
 
 func MetricTime(sec int64) telegraf.Metric {
-	m, err := metric.New(
+	m := metric.New(
 		"cpu",
 		map[string]string{},
 		map[string]interface{}{
@@ -42,9 +43,6 @@ func MetricTime(sec int64) telegraf.Metric {
 		},
 		time.Unix(sec, 0),
 	)
-	if err != nil {
-		panic(err)
-	}
 	return m
 }
 
@@ -98,14 +96,14 @@ func TestBuffer_BatchLenZero(t *testing.T) {
 	b := setup(NewBuffer("test", "", 5))
 	batch := b.Batch(0)
 
-	require.Len(t, batch, 0)
+	require.Empty(t, batch)
 }
 
 func TestBuffer_BatchLenBufferEmpty(t *testing.T) {
 	b := setup(NewBuffer("test", "", 5))
 	batch := b.Batch(2)
 
-	require.Len(t, batch, 0)
+	require.Empty(t, batch)
 }
 
 func TestBuffer_BatchLenUnderfill(t *testing.T) {

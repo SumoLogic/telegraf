@@ -1,8 +1,11 @@
+//go:generate ../../../tools/readme_config_includer/generator
 package nginx_plus
 
 import (
 	"bufio"
+	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -13,40 +16,24 @@ import (
 	"time"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/internal"
+	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/common/tls"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
+//go:embed sample.conf
+var sampleConfig string
+
 type NginxPlus struct {
-	Urls            []string          `toml:"urls"`
-	ResponseTimeout internal.Duration `toml:"response_timeout"`
+	Urls            []string        `toml:"urls"`
+	ResponseTimeout config.Duration `toml:"response_timeout"`
 	tls.ClientConfig
 
 	client *http.Client
 }
 
-var sampleConfig = `
-  ## An array of ngx_http_status_module or status URI to gather stats.
-  urls = ["http://localhost/status"]
-
-  # HTTP response timeout (default: 5s)
-  response_timeout = "5s"
-
-  ## Optional TLS Config
-  # tls_ca = "/etc/telegraf/ca.pem"
-  # tls_cert = "/etc/telegraf/cert.pem"
-  # tls_key = "/etc/telegraf/key.pem"
-  ## Use TLS but skip chain & host verification
-  # insecure_skip_verify = false
-`
-
-func (n *NginxPlus) SampleConfig() string {
+func (*NginxPlus) SampleConfig() string {
 	return sampleConfig
-}
-
-func (n *NginxPlus) Description() string {
-	return "Read Nginx Plus' full status information (ngx_http_status_module)"
 }
 
 func (n *NginxPlus) Gather(acc telegraf.Accumulator) error {
@@ -56,7 +43,7 @@ func (n *NginxPlus) Gather(acc telegraf.Accumulator) error {
 	// collection interval
 
 	if n.client == nil {
-		client, err := n.createHttpClient()
+		client, err := n.createHTTPClient()
 		if err != nil {
 			return err
 		}
@@ -66,14 +53,14 @@ func (n *NginxPlus) Gather(acc telegraf.Accumulator) error {
 	for _, u := range n.Urls {
 		addr, err := url.Parse(u)
 		if err != nil {
-			acc.AddError(fmt.Errorf("Unable to parse address '%s': %s", u, err))
+			acc.AddError(fmt.Errorf("unable to parse address %q: %w", u, err))
 			continue
 		}
 
 		wg.Add(1)
 		go func(addr *url.URL) {
 			defer wg.Done()
-			acc.AddError(n.gatherUrl(addr, acc))
+			acc.AddError(n.gatherURL(addr, acc))
 		}(addr)
 	}
 
@@ -81,9 +68,9 @@ func (n *NginxPlus) Gather(acc telegraf.Accumulator) error {
 	return nil
 }
 
-func (n *NginxPlus) createHttpClient() (*http.Client, error) {
-	if n.ResponseTimeout.Duration < time.Second {
-		n.ResponseTimeout.Duration = time.Second * 5
+func (n *NginxPlus) createHTTPClient() (*http.Client, error) {
+	if n.ResponseTimeout < config.Duration(time.Second) {
+		n.ResponseTimeout = config.Duration(time.Second * 5)
 	}
 
 	tlsConfig, err := n.ClientConfig.TLSConfig()
@@ -95,17 +82,17 @@ func (n *NginxPlus) createHttpClient() (*http.Client, error) {
 		Transport: &http.Transport{
 			TLSClientConfig: tlsConfig,
 		},
-		Timeout: n.ResponseTimeout.Duration,
+		Timeout: time.Duration(n.ResponseTimeout),
 	}
 
 	return client, nil
 }
 
-func (n *NginxPlus) gatherUrl(addr *url.URL, acc telegraf.Accumulator) error {
+func (n *NginxPlus) gatherURL(addr *url.URL, acc telegraf.Accumulator) error {
 	resp, err := n.client.Get(addr.String())
 
 	if err != nil {
-		return fmt.Errorf("error making HTTP request to %s: %s", addr.String(), err)
+		return fmt.Errorf("error making HTTP request to %q: %w", addr.String(), err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -114,7 +101,7 @@ func (n *NginxPlus) gatherUrl(addr *url.URL, acc telegraf.Accumulator) error {
 	contentType := strings.Split(resp.Header.Get("Content-Type"), ";")[0]
 	switch contentType {
 	case "application/json":
-		return gatherStatusUrl(bufio.NewReader(resp.Body), getTags(addr), acc)
+		return gatherStatusURL(bufio.NewReader(resp.Body), getTags(addr), acc)
 	default:
 		return fmt.Errorf("%s returned unexpected content type %s", addr.String(), contentType)
 	}
@@ -283,11 +270,11 @@ type Status struct {
 	} `json:"stream"`
 }
 
-func gatherStatusUrl(r *bufio.Reader, tags map[string]string, acc telegraf.Accumulator) error {
+func gatherStatusURL(r *bufio.Reader, tags map[string]string, acc telegraf.Accumulator) error {
 	dec := json.NewDecoder(r)
 	status := &Status{}
 	if err := dec.Decode(status); err != nil {
-		return fmt.Errorf("Error while decoding JSON response")
+		return errors.New("error while decoding JSON response")
 	}
 	status.Gather(tags, acc)
 	return nil
@@ -318,7 +305,6 @@ func (s *Status) gatherProcessesMetrics(tags map[string]string, acc telegraf.Acc
 		},
 		tags,
 	)
-
 }
 
 func (s *Status) gatherConnectionsMetrics(tags map[string]string, acc telegraf.Accumulator) {

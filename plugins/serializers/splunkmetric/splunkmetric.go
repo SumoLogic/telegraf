@@ -2,15 +2,16 @@ package splunkmetric
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/plugins/serializers"
 )
 
-type serializer struct {
-	HecRouting              bool
-	SplunkmetricMultiMetric bool
+type Serializer struct {
+	HecRouting   bool `toml:"splunkmetric_hec_routing"`
+	MultiMetric  bool `toml:"splunkmetric_multimetric"`
+	OmitEventTag bool `toml:"splunkmetric_omit_event_tag"`
 }
 
 type CommonTags struct {
@@ -23,41 +24,26 @@ type CommonTags struct {
 
 type HECTimeSeries struct {
 	Time   float64                `json:"time"`
+	Event  string                 `json:"event,omitempty"`
 	Host   string                 `json:"host,omitempty"`
 	Index  string                 `json:"index,omitempty"`
 	Source string                 `json:"source,omitempty"`
 	Fields map[string]interface{} `json:"fields"`
 }
 
-// NewSerializer Setup our new serializer
-func NewSerializer(splunkmetric_hec_routing bool, splunkmetric_multimetric bool) (*serializer, error) {
-	/*	Define output params */
-	s := &serializer{
-		HecRouting:              splunkmetric_hec_routing,
-		SplunkmetricMultiMetric: splunkmetric_multimetric,
-	}
-	return s, nil
+func (s *Serializer) Serialize(metric telegraf.Metric) ([]byte, error) {
+	return s.createObject(metric)
 }
 
-func (s *serializer) Serialize(metric telegraf.Metric) ([]byte, error) {
-
-	m, err := s.createObject(metric)
-	if err != nil {
-		return nil, fmt.Errorf("D! [serializer.splunkmetric] Dropping invalid metric: %s", metric.Name())
-	}
-
-	return m, nil
-}
-
-func (s *serializer) SerializeBatch(metrics []telegraf.Metric) ([]byte, error) {
-
+func (s *Serializer) SerializeBatch(metrics []telegraf.Metric) ([]byte, error) {
 	var serialized []byte
 
 	for _, metric := range metrics {
 		m, err := s.createObject(metric)
 		if err != nil {
-			return nil, fmt.Errorf("D! [serializer.splunkmetric] Dropping invalid metric: %s", metric.Name())
-		} else if m != nil {
+			return nil, err
+		}
+		if m != nil {
 			serialized = append(serialized, m...)
 		}
 	}
@@ -65,7 +51,7 @@ func (s *serializer) SerializeBatch(metrics []telegraf.Metric) ([]byte, error) {
 	return serialized, nil
 }
 
-func (s *serializer) createMulti(metric telegraf.Metric, dataGroup HECTimeSeries, commonTags CommonTags) (metricGroup []byte, err error) {
+func (s *Serializer) createMulti(metric telegraf.Metric, dataGroup HECTimeSeries, commonTags CommonTags) (metricGroup []byte, err error) {
 	/* When splunkmetric_multimetric is true, then we can write out multiple name=value pairs as part of the same
 	** event payload. This only works when the time, host, and dimensions are the same for every name=value pair
 	** in the timeseries data.
@@ -75,6 +61,9 @@ func (s *serializer) createMulti(metric telegraf.Metric, dataGroup HECTimeSeries
 	var metricJSON []byte
 
 	// Set the event data from the commonTags above.
+	if !s.OmitEventTag {
+		dataGroup.Event = "metric"
+	}
 	dataGroup.Time = commonTags.Time
 	dataGroup.Host = commonTags.Host
 	dataGroup.Index = commonTags.Index
@@ -112,7 +101,7 @@ func (s *serializer) createMulti(metric telegraf.Metric, dataGroup HECTimeSeries
 	return metricGroup, nil
 }
 
-func (s *serializer) createSingle(metric telegraf.Metric, dataGroup HECTimeSeries, commonTags CommonTags) (metricGroup []byte, err error) {
+func (s *Serializer) createSingle(metric telegraf.Metric, dataGroup HECTimeSeries, commonTags CommonTags) (metricGroup []byte, err error) {
 	/* The default mode is to generate one JSON entity per metric (required for pre-8.0 Splunks)
 	**
 	** The format for single metric is 'nameOfMetric = valueOfMetric'
@@ -121,7 +110,6 @@ func (s *serializer) createSingle(metric telegraf.Metric, dataGroup HECTimeSerie
 	var metricJSON []byte
 
 	for _, field := range metric.FieldList() {
-
 		value, valid := verifyValue(field.Value)
 
 		if !valid {
@@ -132,6 +120,9 @@ func (s *serializer) createSingle(metric telegraf.Metric, dataGroup HECTimeSerie
 		dataGroup.Time = commonTags.Time
 
 		// Apply the common tags from above to every record.
+		if !s.OmitEventTag {
+			dataGroup.Event = "metric"
+		}
 		dataGroup.Host = commonTags.Host
 		dataGroup.Index = commonTags.Index
 		dataGroup.Source = commonTags.Source
@@ -160,8 +151,7 @@ func (s *serializer) createSingle(metric telegraf.Metric, dataGroup HECTimeSerie
 	return metricGroup, nil
 }
 
-func (s *serializer) createObject(metric telegraf.Metric) (metricGroup []byte, err error) {
-
+func (s *Serializer) createObject(metric telegraf.Metric) ([]byte, error) {
 	/*  Splunk supports one metric json object, and does _not_ support an array of JSON objects.
 	     ** Splunk has the following required names for the metric store:
 		 ** metric_name: The name of the metric
@@ -190,15 +180,10 @@ func (s *serializer) createObject(metric telegraf.Metric) (metricGroup []byte, e
 		}
 	}
 	commonTags.Time = float64(metric.Time().UnixNano()) / float64(1000000000)
-	switch s.SplunkmetricMultiMetric {
-	case true:
-		metricGroup, _ = s.createMulti(metric, dataGroup, commonTags)
-	default:
-		metricGroup, _ = s.createSingle(metric, dataGroup, commonTags)
+	if s.MultiMetric {
+		return s.createMulti(metric, dataGroup, commonTags)
 	}
-
-	// Return the metric group regardless of if it's multimetric or single metric.
-	return metricGroup, nil
+	return s.createSingle(metric, dataGroup, commonTags)
 }
 
 func verifyValue(v interface{}) (value interface{}, valid bool) {
@@ -221,4 +206,21 @@ func verifyValue(v interface{}) (value interface{}, valid bool) {
 		value = v
 	}
 	return value, valid
+}
+
+func init() {
+	serializers.Add("splunkmetric",
+		func() serializers.Serializer {
+			return &Serializer{}
+		},
+	)
+}
+
+// InitFromConfig is a compatibility function to construct the parser the old way
+func (s *Serializer) InitFromConfig(cfg *serializers.Config) error {
+	s.HecRouting = cfg.HecRouting
+	s.MultiMetric = cfg.SplunkmetricMultiMetric
+	s.OmitEventTag = cfg.SplunkmetricOmitEventTag
+
+	return nil
 }

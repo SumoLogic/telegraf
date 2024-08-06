@@ -1,11 +1,14 @@
-// Package neptuneapex implements an input plugin for the Neptune Apex
+// Package neptune_apex implements an input plugin for the Neptune Apex
 // aquarium controller.
-package neptuneapex
+//
+//go:generate ../../../tools/readme_config_includer/generator
+package neptune_apex
 
 import (
+	_ "embed"
 	"encoding/xml"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"strconv"
@@ -14,9 +17,12 @@ import (
 	"time"
 
 	"github.com/influxdata/telegraf"
-	"github.com/influxdata/telegraf/internal"
+	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
+
+//go:embed sample.conf
+var sampleConfig string
 
 // Measurement is constant across all metrics.
 const Measurement = "neptune_apex"
@@ -51,30 +57,12 @@ type outlet struct {
 // NeptuneApex implements telegraf.Input.
 type NeptuneApex struct {
 	Servers         []string
-	ResponseTimeout internal.Duration
+	ResponseTimeout config.Duration
 	httpClient      *http.Client
 }
 
-// Description implements telegraf.Input.Description
-func (*NeptuneApex) Description() string {
-	return "Neptune Apex data collector"
-}
-
-// SampleConfig implements telegraf.Input.SampleConfig
 func (*NeptuneApex) SampleConfig() string {
-	return `
-  ## The Neptune Apex plugin reads the publicly available status.xml data from a local Apex.
-  ## Measurements will be logged under "apex".
-
-  ## The base URL of the local Apex(es). If you specify more than one server, they will
-  ## be differentiated by the "source" tag.
-  servers = [
-    "http://apex.local",
-  ]
-
-  ## The response_timeout specifies how long to wait for a reply from the Apex.
-  #response_timeout = "5s"
-`
+	return sampleConfig
 }
 
 // Gather implements telegraf.Input.Gather
@@ -101,13 +89,12 @@ func (n *NeptuneApex) gatherServer(
 }
 
 // parseXML is strict on the input and does not do best-effort parsing.
-//This is because of the life-support nature of the Neptune Apex.
+// This is because of the life-support nature of the Neptune Apex.
 func (n *NeptuneApex) parseXML(acc telegraf.Accumulator, data []byte) error {
 	r := xmlReply{}
 	err := xml.Unmarshal(data, &r)
 	if err != nil {
-		return fmt.Errorf("unable to unmarshal XML: %v\nXML DATA: %q",
-			err, data)
+		return fmt.Errorf("unable to unmarshal XML: %w\nXML DATA: %q", err, data)
 	}
 
 	mainFields := map[string]interface{}{
@@ -150,28 +137,24 @@ func (n *NeptuneApex) parseXML(acc telegraf.Accumulator, data []byte) error {
 		}
 		// Find Amp and Watt probes and add them as fields.
 		// Remove the redundant probe.
-		if pos := findProbe(fmt.Sprintf("%sW", o.Name), r.Probe); pos > -1 {
+		if pos := findProbe(o.Name+"W", r.Probe); pos > -1 {
 			value, err := strconv.ParseFloat(
 				strings.TrimSpace(r.Probe[pos].Value), 64)
 			if err != nil {
 				acc.AddError(
-					fmt.Errorf(
-						"cannot convert string value %q to float64: %v",
-						r.Probe[pos].Value, err))
+					fmt.Errorf("cannot convert string value %q to float64: %w", r.Probe[pos].Value, err))
 				continue // Skip the whole outlet.
 			}
 			fields["watt"] = value
 			r.Probe[pos] = r.Probe[len(r.Probe)-1]
 			r.Probe = r.Probe[:len(r.Probe)-1]
 		}
-		if pos := findProbe(fmt.Sprintf("%sA", o.Name), r.Probe); pos > -1 {
+		if pos := findProbe(o.Name+"A", r.Probe); pos > -1 {
 			value, err := strconv.ParseFloat(
 				strings.TrimSpace(r.Probe[pos].Value), 64)
 			if err != nil {
 				acc.AddError(
-					fmt.Errorf(
-						"cannot convert string value %q to float64: %v",
-						r.Probe[pos].Value, err))
+					fmt.Errorf("cannot convert string value %q to float64: %w", r.Probe[pos].Value, err))
 				break // // Skip the whole outlet.
 			}
 			fields["amp"] = value
@@ -208,9 +191,7 @@ func (n *NeptuneApex) parseXML(acc telegraf.Accumulator, data []byte) error {
 	for _, p := range r.Probe {
 		value, err := strconv.ParseFloat(strings.TrimSpace(p.Value), 64)
 		if err != nil {
-			acc.AddError(fmt.Errorf(
-				"cannot convert string value %q to float64: %v",
-				p.Value, err))
+			acc.AddError(fmt.Errorf("cannot convert string value %q to float64: %w", p.Value, err))
 			continue
 		}
 		fields := map[string]interface{}{
@@ -245,7 +226,7 @@ func findProbe(probe string, probes []probe) int {
 // returns a time.Time struct.
 func parseTime(val string, tz float64) (time.Time, error) {
 	// Magic time constant from https://golang.org/pkg/time/#Parse
-	const TimeLayout = "01/02/2006 15:04:05 -0700"
+	const timeLayout = "01/02/2006 15:04:05 -0700"
 
 	// Timezone offset needs to be explicit
 	sign := '+'
@@ -256,18 +237,18 @@ func parseTime(val string, tz float64) (time.Time, error) {
 	// Build a time string with the timezone in a format Go can parse.
 	tzs := fmt.Sprintf("%c%04d", sign, int(math.Abs(tz))*100)
 	ts := fmt.Sprintf("%s %s", val, tzs)
-	t, err := time.Parse(TimeLayout, ts)
+	t, err := time.Parse(timeLayout, ts)
 	if err != nil {
-		return time.Now(), fmt.Errorf("unable to parse %q (%v)", ts, err)
+		return time.Now(), fmt.Errorf("unable to parse %q: %w", ts, err)
 	}
 	return t, nil
 }
 
 func (n *NeptuneApex) sendRequest(server string) ([]byte, error) {
-	url := fmt.Sprintf("%s/cgi-bin/status.xml", server)
+	url := server + "/cgi-bin/status.xml"
 	resp, err := n.httpClient.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("http GET failed: %v", err)
+		return nil, fmt.Errorf("http GET failed: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -276,9 +257,9 @@ func (n *NeptuneApex) sendRequest(server string) ([]byte, error) {
 			url, resp.StatusCode, http.StatusText(resp.StatusCode),
 			http.StatusOK, http.StatusText(http.StatusOK))
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read output from %q: %v", url, err)
+		return nil, fmt.Errorf("unable to read output from %q: %w", url, err)
 	}
 	return body, nil
 }

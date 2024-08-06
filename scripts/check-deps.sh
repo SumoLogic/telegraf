@@ -19,17 +19,15 @@ for target in ${targets}; do
 		*) continue;;
 	esac
 
+	echo "${target%%/*}/${target##*/}"
 	GOOS=${target%%/*} GOARCH=${target##*/} \
 		go list -deps -f '{{with .Module}}{{.Path}}{{end}}' ./cmd/telegraf/ >> "${tmpdir}/golist"
 done
 
-for dep in $(LC_ALL=C sort -u "${tmpdir}/golist"); do
+LC_ALL=C sort -u < "${tmpdir}/golist" | while IFS= read -r dep; do
 	case "${dep}" in
 		# ignore ourselves
 		github.com/influxdata/telegraf) continue;;
-
-		# dependency is replaced in go.mod
-		github.com/satori/go.uuid) continue;;
 
 		# go-autorest has a single license for all sub modules
 		github.com/Azure/go-autorest/autorest)
@@ -50,6 +48,12 @@ for dep in $(LC_ALL=C sort -u "${tmpdir}/golist"); do
 
 	echo "${dep}" >> "${tmpdir}/HEAD"
 done
+
+# If there are two versions of a library that have the same base (like
+# github.com/foo/bar github.com/foo/bar/v3) there will be a duplicate
+# in the list.  Remove duplicates again.
+mv "${tmpdir}/HEAD" "${tmpdir}/HEAD-dup"
+uniq "${tmpdir}/HEAD-dup" > "${tmpdir}/HEAD"
 
 grep '^-' docs/LICENSE_OF_DEPENDENCIES.md | grep -v github.com/DataDog/datadog-agent | cut -f 2 -d' ' > "${tmpdir}/LICENSE_OF_DEPENDENCIES.md"
 

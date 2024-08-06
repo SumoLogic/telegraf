@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/influxdata/telegraf"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/influxdata/telegraf"
 )
 
 func TestNewMetric(t *testing.T) {
@@ -20,13 +20,12 @@ func TestNewMetric(t *testing.T) {
 		"usage_idle": float64(99),
 		"usage_busy": float64(1),
 	}
-	m, err := New("cpu", tags, fields, now)
-	require.NoError(t, err)
+	m := New("cpu", tags, fields, now)
 
 	require.Equal(t, "cpu", m.Name())
 	require.Equal(t, tags, m.Tags())
 	require.Equal(t, fields, m.Fields())
-	require.Equal(t, 2, len(m.FieldList()))
+	require.Len(t, m.FieldList(), 2)
 	require.Equal(t, now, m.Time())
 }
 
@@ -38,10 +37,7 @@ func baseMetric() telegraf.Metric {
 	}
 	now := time.Now()
 
-	m, err := New("cpu", tags, fields, now)
-	if err != nil {
-		panic(err)
-	}
+	m := New("cpu", tags, fields, now)
 	return m
 }
 
@@ -64,7 +60,7 @@ func TestAddTagOverwrites(t *testing.T) {
 	value, ok := m.GetTag("host")
 	require.True(t, ok)
 	require.Equal(t, "example.org", value)
-	require.Equal(t, 1, len(m.TagList()))
+	require.Len(t, m.TagList(), 1)
 }
 
 func TestRemoveTagNoEffectOnMissingTags(t *testing.T) {
@@ -82,17 +78,17 @@ func TestRemoveTagNoEffectOnMissingTags(t *testing.T) {
 func TestGetTag(t *testing.T) {
 	m := baseMetric()
 
-	value, ok := m.GetTag("host")
+	_, ok := m.GetTag("host")
 	require.False(t, ok)
 
 	m.AddTag("host", "localhost")
 
-	value, ok = m.GetTag("host")
+	value, ok := m.GetTag("host")
 	require.True(t, ok)
 	require.Equal(t, "localhost", value)
 
 	m.RemoveTag("host")
-	value, ok = m.GetTag("host")
+	_, ok = m.GetTag("host")
 	require.False(t, ok)
 }
 
@@ -112,11 +108,11 @@ func TestAddFieldOverwrites(t *testing.T) {
 	m.AddField("value", 1.0)
 	m.AddField("value", 42.0)
 
-	require.Equal(t, 1, len(m.FieldList()))
+	require.Len(t, m.FieldList(), 1)
 
 	value, ok := m.GetField("value")
 	require.True(t, ok)
-	require.Equal(t, 42.0, value)
+	require.InDelta(t, 42.0, value, 0.001)
 }
 
 func TestAddFieldChangesType(t *testing.T) {
@@ -125,7 +121,7 @@ func TestAddFieldChangesType(t *testing.T) {
 	m.AddField("value", 1.0)
 	m.AddField("value", "xyzzy")
 
-	require.Equal(t, 1, len(m.FieldList()))
+	require.Len(t, m.FieldList(), 1)
 
 	value, ok := m.GetField("value")
 	require.True(t, ok)
@@ -147,17 +143,17 @@ func TestRemoveFieldNoEffectOnMissingFields(t *testing.T) {
 func TestGetField(t *testing.T) {
 	m := baseMetric()
 
-	value, ok := m.GetField("foo")
+	_, ok := m.GetField("foo")
 	require.False(t, ok)
 
 	m.AddField("foo", "bar")
 
-	value, ok = m.GetField("foo")
+	value, ok := m.GetField("foo")
 	require.True(t, ok)
 	require.Equal(t, "bar", value)
 
 	m.RemoveTag("foo")
-	value, ok = m.GetTag("foo")
+	_, ok = m.GetTag("foo")
 	require.False(t, ok)
 }
 
@@ -176,7 +172,7 @@ func TestTagList_Sorted(t *testing.T) {
 
 func TestEquals(t *testing.T) {
 	now := time.Now()
-	m1, err := New("cpu",
+	m1 := New("cpu",
 		map[string]string{
 			"host": "localhost",
 		},
@@ -185,9 +181,8 @@ func TestEquals(t *testing.T) {
 		},
 		now,
 	)
-	require.NoError(t, err)
 
-	m2, err := New("cpu",
+	m2 := New("cpu",
 		map[string]string{
 			"host": "localhost",
 		},
@@ -196,7 +191,6 @@ func TestEquals(t *testing.T) {
 		},
 		now,
 	)
-	require.NoError(t, err)
 
 	lhs := m1.(*metric)
 	require.Equal(t, lhs, m2)
@@ -208,7 +202,7 @@ func TestEquals(t *testing.T) {
 }
 
 func TestHashID(t *testing.T) {
-	m, _ := New(
+	m := New(
 		"cpu",
 		map[string]string{
 			"datacenter": "us-east-1",
@@ -224,24 +218,24 @@ func TestHashID(t *testing.T) {
 
 	// adding a field doesn't change the hash:
 	m.AddField("foo", int64(100))
-	assert.Equal(t, hash, m.HashID())
+	require.Equal(t, hash, m.HashID())
 
 	// removing a non-existent tag doesn't change the hash:
 	m.RemoveTag("no-op")
-	assert.Equal(t, hash, m.HashID())
+	require.Equal(t, hash, m.HashID())
 
 	// adding a tag does change it:
 	m.AddTag("foo", "bar")
-	assert.NotEqual(t, hash, m.HashID())
+	require.NotEqual(t, hash, m.HashID())
 	hash = m.HashID()
 
 	// removing a tag also changes it:
 	m.RemoveTag("mytag")
-	assert.NotEqual(t, hash, m.HashID())
+	require.NotEqual(t, hash, m.HashID())
 }
 
 func TestHashID_Consistency(t *testing.T) {
-	m, _ := New(
+	m := New(
 		"cpu",
 		map[string]string{
 			"datacenter": "us-east-1",
@@ -255,7 +249,7 @@ func TestHashID_Consistency(t *testing.T) {
 	)
 	hash := m.HashID()
 
-	m2, _ := New(
+	m2 := New(
 		"cpu",
 		map[string]string{
 			"datacenter": "us-east-1",
@@ -267,14 +261,14 @@ func TestHashID_Consistency(t *testing.T) {
 		},
 		time.Now(),
 	)
-	assert.Equal(t, hash, m2.HashID())
+	require.Equal(t, hash, m2.HashID())
 
 	m3 := m.Copy()
-	assert.Equal(t, m2.HashID(), m3.HashID())
+	require.Equal(t, m2.HashID(), m3.HashID())
 }
 
 func TestHashID_Delimiting(t *testing.T) {
-	m1, _ := New(
+	m1 := New(
 		"cpu",
 		map[string]string{
 			"a": "x",
@@ -286,7 +280,7 @@ func TestHashID_Delimiting(t *testing.T) {
 		},
 		time.Now(),
 	)
-	m2, _ := New(
+	m2 := New(
 		"cpu",
 		map[string]string{
 			"a": "xbycz",
@@ -296,7 +290,7 @@ func TestHashID_Delimiting(t *testing.T) {
 		},
 		time.Now(),
 	)
-	assert.NotEqual(t, m1.HashID(), m2.HashID())
+	require.NotEqual(t, m1.HashID(), m2.HashID())
 }
 
 func TestSetName(t *testing.T) {
@@ -328,15 +322,7 @@ func TestValueType(t *testing.T) {
 	fields := map[string]interface{}{
 		"value": float64(42),
 	}
-	m, err := New("cpu", tags, fields, now, telegraf.Gauge)
-	assert.NoError(t, err)
+	m := New("cpu", tags, fields, now, telegraf.Gauge)
 
-	assert.Equal(t, telegraf.Gauge, m.Type())
-}
-
-func TestCopyAggregate(t *testing.T) {
-	m1 := baseMetric()
-	m1.SetAggregate(true)
-	m2 := m1.Copy()
-	assert.True(t, m2.IsAggregate())
+	require.Equal(t, telegraf.Gauge, m.Type())
 }

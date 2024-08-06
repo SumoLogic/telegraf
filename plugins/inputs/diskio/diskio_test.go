@@ -3,10 +3,11 @@ package diskio
 import (
 	"testing"
 
+	"github.com/shirou/gopsutil/v3/disk"
+	"github.com/stretchr/testify/require"
+
 	"github.com/influxdata/telegraf/plugins/inputs/system"
 	"github.com/influxdata/telegraf/testutil"
-	"github.com/shirou/gopsutil/disk"
-	"github.com/stretchr/testify/require"
 )
 
 func TestDiskIO(t *testing.T) {
@@ -111,6 +112,7 @@ func TestDiskIO(t *testing.T) {
 				ps:      &mps,
 				Devices: tt.devices,
 			}
+			require.NoError(t, diskio.Init())
 			err := diskio.Gather(&acc)
 			require.Equal(t, tt.err, err)
 
@@ -120,7 +122,7 @@ func TestDiskIO(t *testing.T) {
 						"missing point: diskio %v %q: %v", metric.tags, k, v)
 				}
 			}
-			require.Equal(t, len(tt.metrics), int(acc.NMetrics()), "unexpected number of metrics")
+			require.Len(t, tt.metrics, int(acc.NMetrics()), "unexpected number of metrics")
 			require.True(t, mps.AssertExpectations(t))
 		})
 	}

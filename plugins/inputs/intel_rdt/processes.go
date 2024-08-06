@@ -1,4 +1,4 @@
-// +build !windows
+//go:build !windows
 
 package intel_rdt
 
@@ -20,11 +20,12 @@ func NewProcessor() ProcessesHandler {
 }
 
 func (p *ProcessManager) getAllProcesses() ([]Process, error) {
-	var processes []Process
 	allProcesses, err := procfs.AllProcs()
 	if err != nil {
 		return nil, err
 	}
+
+	processes := make([]Process, 0, len(allProcesses))
 	for _, proc := range allProcesses {
 		procComm, err := proc.Comm()
 		if err != nil {

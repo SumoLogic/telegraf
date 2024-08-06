@@ -1,15 +1,24 @@
+//go:generate ../../../tools/readme_config_includer/generator
 package net
 
 import (
+	_ "embed"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/influxdata/telegraf"
+	"github.com/influxdata/telegraf/config"
 	"github.com/influxdata/telegraf/filter"
 	"github.com/influxdata/telegraf/plugins/inputs"
 	"github.com/influxdata/telegraf/plugins/inputs/system"
 )
+
+//go:embed sample.conf
+var sampleConfig string
 
 type NetIOStats struct {
 	filter filter.Filter
@@ -20,43 +29,39 @@ type NetIOStats struct {
 	Interfaces          []string
 }
 
-func (_ *NetIOStats) Description() string {
-	return "Read metrics about network interface usage"
+func (*NetIOStats) SampleConfig() string {
+	return sampleConfig
 }
 
-var netSampleConfig = `
-  ## By default, telegraf gathers stats from any up interface (excluding loopback)
-  ## Setting interfaces will tell it to gather these explicit interfaces,
-  ## regardless of status.
-  ##
-  # interfaces = ["eth0"]
-  ##
-  ## On linux systems telegraf also collects protocol stats.
-  ## Setting ignore_protocol_stats to true will skip reporting of protocol metrics.
-  ##
-  # ignore_protocol_stats = false
-  ##
-`
-
-func (_ *NetIOStats) SampleConfig() string {
-	return netSampleConfig
-}
-
-func (s *NetIOStats) Gather(acc telegraf.Accumulator) error {
-	netio, err := s.ps.NetIO()
-	if err != nil {
-		return fmt.Errorf("error getting net io info: %s", err)
+func (n *NetIOStats) Init() error {
+	if !n.IgnoreProtocolStats {
+		config.PrintOptionValueDeprecationNotice("inputs.net", "ignore_protocol_stats", "false",
+			telegraf.DeprecationInfo{
+				Since:     "1.27.3",
+				RemovalIn: "1.36.0",
+				Notice:    "use the 'inputs.nstat' plugin instead for protocol stats",
+			},
+		)
 	}
 
-	if s.filter == nil {
-		if s.filter, err = filter.Compile(s.Interfaces); err != nil {
-			return fmt.Errorf("error compiling filter: %s", err)
+	return nil
+}
+
+func (n *NetIOStats) Gather(acc telegraf.Accumulator) error {
+	netio, err := n.ps.NetIO()
+	if err != nil {
+		return fmt.Errorf("error getting net io info: %w", err)
+	}
+
+	if n.filter == nil {
+		if n.filter, err = filter.Compile(n.Interfaces); err != nil {
+			return fmt.Errorf("error compiling filter: %w", err)
 		}
 	}
 
 	interfaces, err := net.Interfaces()
 	if err != nil {
-		return fmt.Errorf("error getting list of interfaces: %s", err)
+		return fmt.Errorf("error getting list of interfaces: %w", err)
 	}
 	interfacesByName := map[string]net.Interface{}
 	for _, iface := range interfaces {
@@ -64,17 +69,17 @@ func (s *NetIOStats) Gather(acc telegraf.Accumulator) error {
 	}
 
 	for _, io := range netio {
-		if len(s.Interfaces) != 0 {
+		if len(n.Interfaces) != 0 {
 			var found bool
 
-			if s.filter.Match(io.Name) {
+			if n.filter.Match(io.Name) {
 				found = true
 			}
 
 			if !found {
 				continue
 			}
-		} else if !s.skipChecks {
+		} else if !n.skipChecks {
 			iface, ok := interfacesByName[io.Name]
 			if !ok {
 				continue
@@ -102,14 +107,16 @@ func (s *NetIOStats) Gather(acc telegraf.Accumulator) error {
 			"err_out":      io.Errout,
 			"drop_in":      io.Dropin,
 			"drop_out":     io.Dropout,
+			"speed":        getInterfaceSpeed(io.Name),
 		}
 		acc.AddCounter("net", fields, tags)
 	}
 
 	// Get system wide stats for different network protocols
 	// (ignore these stats if the call fails)
-	if !s.IgnoreProtocolStats {
-		netprotos, _ := s.ps.NetProto()
+	if !n.IgnoreProtocolStats {
+		//nolint:errcheck // stats ignored on fail
+		netprotos, _ := n.ps.NetProto()
 		fields := make(map[string]interface{})
 		for _, proto := range netprotos {
 			for stat, value := range proto.Stats {
@@ -125,6 +132,25 @@ func (s *NetIOStats) Gather(acc telegraf.Accumulator) error {
 	}
 
 	return nil
+}
+
+// Get the interface speed from /sys/class/net/*/speed file. returns -1 if unsupported
+func getInterfaceSpeed(ioName string) int64 {
+	sysPath := os.Getenv("HOST_SYS")
+	if sysPath == "" {
+		sysPath = "/sys"
+	}
+
+	raw, err := os.ReadFile(filepath.Join(sysPath, "class", "net", ioName, "speed"))
+	if err != nil {
+		return -1
+	}
+
+	speed, err := strconv.ParseInt(strings.TrimSuffix(string(raw), "\n"), 10, 64)
+	if err != nil {
+		return -1
+	}
+	return speed
 }
 
 func init() {

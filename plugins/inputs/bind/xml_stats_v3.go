@@ -25,7 +25,7 @@ type v3Stats struct {
 type v3Memory struct {
 	Contexts []struct {
 		// Omitted nodes: references, maxinuse, blocksize, pools, hiwater, lowater
-		Id    string `xml:"id"`
+		ID    string `xml:"id"`
 		Name  string `xml:"name"`
 		Total int64  `xml:"total"`
 		InUse int64  `xml:"inuse"`
@@ -71,7 +71,10 @@ type v3CounterGroup struct {
 func (b *Bind) addStatsXMLv3(stats v3Stats, acc telegraf.Accumulator, hostPort string) {
 	grouper := metric.NewSeriesGrouper()
 	ts := time.Now()
-	host, port, _ := net.SplitHostPort(hostPort)
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		acc.AddError(err)
+	}
 	// Counter groups
 	for _, cg := range stats.Server.CounterGroups {
 		for _, c := range cg.Counters {
@@ -98,7 +101,7 @@ func (b *Bind) addStatsXMLv3(stats v3Stats, acc telegraf.Accumulator, hostPort s
 	// Detailed, per-context memory stats
 	if b.GatherMemoryContexts {
 		for _, c := range stats.Memory.Contexts {
-			tags := map[string]string{"url": hostPort, "source": host, "port": port, "id": c.Id, "name": c.Name}
+			tags := map[string]string{"url": hostPort, "source": host, "port": port, "id": c.ID, "name": c.Name}
 			fields := map[string]interface{}{"total": c.Total, "in_use": c.InUse}
 
 			acc.AddGauge("bind_memory_context", fields, tags)
@@ -125,8 +128,8 @@ func (b *Bind) addStatsXMLv3(stats v3Stats, acc telegraf.Accumulator, hostPort s
 	}
 
 	//Add grouped metrics
-	for _, metric := range grouper.Metrics() {
-		acc.AddMetric(metric)
+	for _, groupedMetric := range grouper.Metrics() {
+		acc.AddMetric(groupedMetric)
 	}
 }
 
@@ -138,21 +141,29 @@ func (b *Bind) readStatsXMLv3(addr *url.URL, acc telegraf.Accumulator) error {
 
 	// Progressively build up full v3Stats struct by parsing the individual HTTP responses
 	for _, suffix := range [...]string{"/server", "/net", "/mem"} {
-		scrapeUrl := addr.String() + suffix
+		err := func() error {
+			scrapeURL := addr.String() + suffix
 
-		resp, err := client.Get(scrapeUrl)
+			resp, err := b.client.Get(scrapeURL)
+			if err != nil {
+				return err
+			}
+
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("%s returned HTTP status: %s", scrapeURL, resp.Status)
+			}
+
+			if err := xml.NewDecoder(resp.Body).Decode(&stats); err != nil {
+				return fmt.Errorf("unable to decode XML document: %w", err)
+			}
+
+			return nil
+		}()
+
 		if err != nil {
 			return err
-		}
-
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("%s returned HTTP status: %s", scrapeUrl, resp.Status)
-		}
-
-		if err := xml.NewDecoder(resp.Body).Decode(&stats); err != nil {
-			return fmt.Errorf("Unable to decode XML document: %s", err)
 		}
 	}
 

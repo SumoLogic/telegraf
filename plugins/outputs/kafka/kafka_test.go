@@ -1,15 +1,19 @@
 package kafka
 
 import (
+	"context"
 	"testing"
 	"time"
 
-	"github.com/Shopify/sarama"
+	"github.com/IBM/sarama"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	kafkacontainer "github.com/testcontainers/testcontainers-go/modules/kafka"
+
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/metric"
-	"github.com/influxdata/telegraf/plugins/serializers"
+	"github.com/influxdata/telegraf/plugins/serializers/influx"
 	"github.com/influxdata/telegraf/testutil"
-	"github.com/stretchr/testify/require"
 )
 
 type topicSuffixTestpair struct {
@@ -17,40 +21,51 @@ type topicSuffixTestpair struct {
 	expectedTopic string
 }
 
-func TestConnectAndWrite(t *testing.T) {
+func TestConnectAndWriteIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	brokers := []string{testutil.GetLocalHost() + ":9092"}
-	s, _ := serializers.NewInfluxSerializer()
-	k := &Kafka{
-		Brokers:    brokers,
-		Topic:      "Test",
-		serializer: s,
+	ctx := context.Background()
+	kafkaContainer, err := kafkacontainer.RunContainer(ctx,
+		kafkacontainer.WithClusterID("test-cluster"),
+		testcontainers.WithImage("confluentinc/confluent-local:7.5.0"),
+	)
+	require.NoError(t, err)
+	defer kafkaContainer.Terminate(ctx) //nolint:errcheck // ignored
+
+	brokers, err := kafkaContainer.Brokers(ctx)
+	require.NoError(t, err)
+
+	// Setup the plugin
+	plugin := &Kafka{
+		Brokers:      brokers,
+		Topic:        "Test",
+		Log:          testutil.Logger{},
+		producerFunc: sarama.NewSyncProducer,
 	}
 
+	// Setup the metric serializer
+	s := &influx.Serializer{}
+	require.NoError(t, s.Init())
+	plugin.SetSerializer(s)
+
 	// Verify that we can connect to the Kafka broker
-	err := k.Connect()
-	require.NoError(t, err)
+	require.NoError(t, plugin.Init())
+	require.NoError(t, plugin.Connect())
+	defer plugin.Close()
 
 	// Verify that we can successfully write data to the kafka broker
-	err = k.Write(testutil.MockMetrics())
-	require.NoError(t, err)
-	k.Close()
+	require.NoError(t, plugin.Write(testutil.MockMetrics()))
 }
 
 func TestTopicSuffixes(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	topic := "Test"
 
-	metric := testutil.TestMetric(1)
+	m := testutil.TestMetric(1)
 	metricTagName := "tag1"
-	metricTagValue := metric.Tags()[metricTagName]
-	metricName := metric.Name()
+	metricTagValue := m.Tags()[metricTagName]
+	metricName := m.Name()
 
 	var testcases = []topicSuffixTestpair{
 		// This ensures empty separator is okay
@@ -80,18 +95,15 @@ func TestTopicSuffixes(t *testing.T) {
 		k := &Kafka{
 			Topic:       topic,
 			TopicSuffix: topicSuffix,
+			Log:         testutil.Logger{},
 		}
 
-		_, topic := k.GetTopicName(metric)
+		_, topic := k.GetTopicName(m)
 		require.Equal(t, expectedTopic, topic)
 	}
 }
 
 func TestValidateTopicSuffixMethod(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
 	err := ValidateTopicSuffixMethod("invalid_topic_suffix_method")
 	require.Error(t, err, "Topic suffix method used should be invalid.")
 
@@ -114,7 +126,7 @@ func TestRoutingKey(t *testing.T) {
 				RoutingKey: "static",
 			},
 			metric: func() telegraf.Metric {
-				m, _ := metric.New(
+				m := metric.New(
 					"cpu",
 					map[string]string{},
 					map[string]interface{}{
@@ -134,7 +146,7 @@ func TestRoutingKey(t *testing.T) {
 				RoutingKey: "random",
 			},
 			metric: func() telegraf.Metric {
-				m, _ := metric.New(
+				m := metric.New(
 					"cpu",
 					map[string]string{},
 					map[string]interface{}{
@@ -145,12 +157,13 @@ func TestRoutingKey(t *testing.T) {
 				return m
 			}(),
 			check: func(t *testing.T, routingKey string) {
-				require.Equal(t, 36, len(routingKey))
+				require.Len(t, routingKey, 36)
 			},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			tt.kafka.Log = testutil.Logger{}
 			key, err := tt.kafka.routingKey(tt.metric)
 			require.NoError(t, err)
 			tt.check(t, key)
@@ -160,6 +173,7 @@ func TestRoutingKey(t *testing.T) {
 
 type MockProducer struct {
 	sent []*sarama.ProducerMessage
+	sarama.SyncProducer
 }
 
 func (p *MockProducer) SendMessage(msg *sarama.ProducerMessage) (partition int32, offset int64, err error) {
@@ -176,7 +190,7 @@ func (p *MockProducer) Close() error {
 	return nil
 }
 
-func NewMockProducer(addrs []string, config *sarama.Config) (sarama.SyncProducer, error) {
+func NewMockProducer(_ []string, _ *sarama.Config) (sarama.SyncProducer, error) {
 	return &MockProducer{}, nil
 }
 
@@ -279,11 +293,13 @@ func TestTopicTag(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s, err := serializers.NewInfluxSerializer()
-			require.NoError(t, err)
+			tt.plugin.Log = testutil.Logger{}
+
+			s := &influx.Serializer{}
+			require.NoError(t, s.Init())
 			tt.plugin.SetSerializer(s)
 
-			err = tt.plugin.Connect()
+			err := tt.plugin.Connect()
 			require.NoError(t, err)
 
 			producer := &MockProducer{}

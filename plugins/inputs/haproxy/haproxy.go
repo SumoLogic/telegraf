@@ -1,7 +1,10 @@
+//go:generate ../../../tools/readme_config_includer/generator
 package haproxy
 
 import (
+	_ "embed"
 	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -18,6 +21,9 @@ import (
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
 
+//go:embed sample.conf
+var sampleConfig string
+
 //CSV format: https://cbonte.github.io/haproxy-dconv/1.5/configuration.html#9.1
 
 type haproxy struct {
@@ -30,57 +36,21 @@ type haproxy struct {
 	client *http.Client
 }
 
-var sampleConfig = `
-  ## An array of address to gather stats about. Specify an ip on hostname
-  ## with optional port. ie localhost, 10.10.3.33:1936, etc.
-  ## Make sure you specify the complete path to the stats endpoint
-  ## including the protocol, ie http://10.10.3.33:1936/haproxy?stats
-
-  ## If no servers are specified, then default to 127.0.0.1:1936/haproxy?stats
-  servers = ["http://myhaproxy.com:1936/haproxy?stats"]
-
-  ## Credentials for basic HTTP authentication
-  # username = "admin"
-  # password = "admin"
-
-  ## You can also use local socket with standard wildcard globbing.
-  ## Server address not starting with 'http' will be treated as a possible
-  ## socket, so both examples below are valid.
-  # servers = ["socket:/run/haproxy/admin.sock", "/run/haproxy/*.sock"]
-
-  ## By default, some of the fields are renamed from what haproxy calls them.
-  ## Setting this option to true results in the plugin keeping the original
-  ## field names.
-  # keep_field_names = false
-
-  ## Optional TLS Config
-  # tls_ca = "/etc/telegraf/ca.pem"
-  # tls_cert = "/etc/telegraf/cert.pem"
-  # tls_key = "/etc/telegraf/key.pem"
-  ## Use TLS but skip chain & host verification
-  # insecure_skip_verify = false
-`
-
-func (r *haproxy) SampleConfig() string {
+func (*haproxy) SampleConfig() string {
 	return sampleConfig
-}
-
-func (r *haproxy) Description() string {
-	return "Read metrics of haproxy, via socket or csv stats page"
 }
 
 // Reads stats from all configured servers accumulates stats.
 // Returns one of the errors encountered while gather stats (if any).
-func (g *haproxy) Gather(acc telegraf.Accumulator) error {
-	if len(g.Servers) == 0 {
-		return g.gatherServer("http://127.0.0.1:1936/haproxy?stats", acc)
+func (h *haproxy) Gather(acc telegraf.Accumulator) error {
+	if len(h.Servers) == 0 {
+		return h.gatherServer("http://127.0.0.1:1936/haproxy?stats", acc)
 	}
 
-	endpoints := make([]string, 0, len(g.Servers))
+	endpoints := make([]string, 0, len(h.Servers))
 
-	for _, endpoint := range g.Servers {
-
-		if strings.HasPrefix(endpoint, "http") {
+	for _, endpoint := range h.Servers {
+		if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") || strings.HasPrefix(endpoint, "tcp://") {
 			endpoints = append(endpoints, endpoint)
 			continue
 		}
@@ -96,9 +66,7 @@ func (g *haproxy) Gather(acc telegraf.Accumulator) error {
 		if len(matches) == 0 {
 			endpoints = append(endpoints, socketPath)
 		} else {
-			for _, match := range matches {
-				endpoints = append(endpoints, match)
-			}
+			endpoints = append(endpoints, matches...)
 		}
 	}
 
@@ -107,7 +75,7 @@ func (g *haproxy) Gather(acc telegraf.Accumulator) error {
 	for _, server := range endpoints {
 		go func(serv string) {
 			defer wg.Done()
-			if err := g.gatherServer(serv, acc); err != nil {
+			if err := h.gatherServer(serv, acc); err != nil {
 				acc.AddError(err)
 			}
 		}(server)
@@ -117,43 +85,48 @@ func (g *haproxy) Gather(acc telegraf.Accumulator) error {
 	return nil
 }
 
-func (g *haproxy) gatherServerSocket(addr string, acc telegraf.Accumulator) error {
-	socketPath := getSocketAddr(addr)
+func (h *haproxy) gatherServerSocket(addr string, acc telegraf.Accumulator) error {
+	var network, address string
+	if strings.HasPrefix(addr, "tcp://") {
+		network = "tcp"
+		address = strings.TrimPrefix(addr, "tcp://")
+	} else {
+		network = "unix"
+		address = getSocketAddr(addr)
+	}
 
-	c, err := net.Dial("unix", socketPath)
-
+	c, err := net.Dial(network, address)
 	if err != nil {
-		return fmt.Errorf("Could not connect to socket '%s': %s", addr, err)
+		return fmt.Errorf("could not connect to '%s://%s': %w", network, address, err)
 	}
 
 	_, errw := c.Write([]byte("show stat\n"))
-
 	if errw != nil {
-		return fmt.Errorf("Could not write to socket '%s': %s", addr, errw)
+		return fmt.Errorf("could not write to socket '%s://%s': %w", network, address, errw)
 	}
 
-	return g.importCsvResult(c, acc, socketPath)
+	return h.importCsvResult(c, acc, address)
 }
 
-func (g *haproxy) gatherServer(addr string, acc telegraf.Accumulator) error {
+func (h *haproxy) gatherServer(addr string, acc telegraf.Accumulator) error {
 	if !strings.HasPrefix(addr, "http") {
-		return g.gatherServerSocket(addr, acc)
+		return h.gatherServerSocket(addr, acc)
 	}
 
-	if g.client == nil {
-		tlsCfg, err := g.ClientConfig.TLSConfig()
+	if h.client == nil {
+		tlsCfg, err := h.ClientConfig.TLSConfig()
 		if err != nil {
 			return err
 		}
 		tr := &http.Transport{
-			ResponseHeaderTimeout: time.Duration(3 * time.Second),
+			ResponseHeaderTimeout: 3 * time.Second,
 			TLSClientConfig:       tlsCfg,
 		}
 		client := &http.Client{
 			Transport: tr,
-			Timeout:   time.Duration(4 * time.Second),
+			Timeout:   4 * time.Second,
 		}
-		g.client = client
+		h.client = client
 	}
 
 	if !strings.HasSuffix(addr, ";csv") {
@@ -162,12 +135,12 @@ func (g *haproxy) gatherServer(addr string, acc telegraf.Accumulator) error {
 
 	u, err := url.Parse(addr)
 	if err != nil {
-		return fmt.Errorf("unable parse server address '%s': %s", addr, err)
+		return fmt.Errorf("unable parse server address %q: %w", addr, err)
 	}
 
 	req, err := http.NewRequest("GET", addr, nil)
 	if err != nil {
-		return fmt.Errorf("unable to create new request '%s': %s", addr, err)
+		return fmt.Errorf("unable to create new request %q: %w", addr, err)
 	}
 	if u.User != nil {
 		p, _ := u.User.Password()
@@ -176,22 +149,22 @@ func (g *haproxy) gatherServer(addr string, acc telegraf.Accumulator) error {
 		addr = u.String()
 	}
 
-	if g.Username != "" || g.Password != "" {
-		req.SetBasicAuth(g.Username, g.Password)
+	if h.Username != "" || h.Password != "" {
+		req.SetBasicAuth(h.Username, h.Password)
 	}
 
-	res, err := g.client.Do(req)
+	res, err := h.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("unable to connect to haproxy server '%s': %s", addr, err)
+		return fmt.Errorf("unable to connect to haproxy server %q: %w", addr, err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return fmt.Errorf("unable to get valid stat result from '%s', http response code : %d", addr, res.StatusCode)
+		return fmt.Errorf("unable to get valid stat result from %q, http response code : %d", addr, res.StatusCode)
 	}
 
-	if err := g.importCsvResult(res.Body, acc, u.Host); err != nil {
-		return fmt.Errorf("unable to parse stat result from '%s': %s", addr, err)
+	if err := h.importCsvResult(res.Body, acc, u.Host); err != nil {
+		return fmt.Errorf("unable to parse stat result from %q: %w", addr, err)
 	}
 
 	return nil
@@ -202,9 +175,8 @@ func getSocketAddr(sock string) string {
 
 	if len(socketAddr) >= 2 {
 		return socketAddr[1]
-	} else {
-		return socketAddr[0]
 	}
+	return socketAddr[0]
 }
 
 var typeNames = []string{"frontend", "backend", "server", "listener"}
@@ -223,7 +195,7 @@ var fieldRenames = map[string]string{
 	"hrsp_other": "http_response.other",
 }
 
-func (g *haproxy) importCsvResult(r io.Reader, acc telegraf.Accumulator, host string) error {
+func (h *haproxy) importCsvResult(r io.Reader, acc telegraf.Accumulator, host string) error {
 	csvr := csv.NewReader(r)
 	now := time.Now()
 
@@ -232,13 +204,13 @@ func (g *haproxy) importCsvResult(r io.Reader, acc telegraf.Accumulator, host st
 		return err
 	}
 	if len(headers[0]) <= 2 || headers[0][:2] != "# " {
-		return fmt.Errorf("did not receive standard haproxy headers")
+		return errors.New("did not receive standard haproxy headers")
 	}
 	headers[0] = headers[0][2:]
 
 	for {
 		row, err := csvr.Read()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
@@ -260,7 +232,7 @@ func (g *haproxy) importCsvResult(r io.Reader, acc telegraf.Accumulator, host st
 
 			colName := headers[i]
 			fieldName := colName
-			if !g.KeepFieldNames {
+			if !h.KeepFieldNames {
 				if fieldRename, ok := fieldRenames[colName]; ok {
 					fieldName = fieldRename
 				}
@@ -272,7 +244,7 @@ func (g *haproxy) importCsvResult(r io.Reader, acc telegraf.Accumulator, host st
 			case "type":
 				vi, err := strconv.ParseInt(v, 10, 64)
 				if err != nil {
-					return fmt.Errorf("unable to parse type value '%s'", v)
+					return fmt.Errorf("unable to parse type value %q", v)
 				}
 				if vi >= int64(len(typeNames)) {
 					return fmt.Errorf("received unknown type value: %d", vi)

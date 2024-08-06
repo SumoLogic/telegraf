@@ -1,18 +1,24 @@
-// +build linux
+//go:generate ../../../tools/readme_config_includer/generator
+//go:build linux
 
 package ipvs
 
 import (
+	_ "embed"
 	"fmt"
 	"math/bits"
 	"strconv"
 	"syscall"
 
-	"github.com/docker/libnetwork/ipvs"
+	"github.com/moby/ipvs"
+
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/plugins/common/logrus"
 	"github.com/influxdata/telegraf/plugins/inputs"
 )
+
+//go:embed sample.conf
+var sampleConfig string
 
 // IPVS holds the state for this input plugin
 type IPVS struct {
@@ -20,14 +26,8 @@ type IPVS struct {
 	Log    telegraf.Logger
 }
 
-// Description returns a description string
-func (i *IPVS) Description() string {
-	return "Collect virtual and real server stats from Linux IPVS"
-}
-
-// SampleConfig returns a sample configuration for this input plugin
-func (i *IPVS) SampleConfig() string {
-	return ``
+func (*IPVS) SampleConfig() string {
+	return sampleConfig
 }
 
 // Gather gathers the stats
@@ -35,7 +35,7 @@ func (i *IPVS) Gather(acc telegraf.Accumulator) error {
 	if i.handle == nil {
 		h, err := ipvs.New("") // TODO: make the namespace configurable
 		if err != nil {
-			return fmt.Errorf("unable to open IPVS handle: %v", err)
+			return fmt.Errorf("unable to open IPVS handle: %w", err)
 		}
 		i.handle = h
 	}
@@ -44,7 +44,7 @@ func (i *IPVS) Gather(acc telegraf.Accumulator) error {
 	if err != nil {
 		i.handle.Close()
 		i.handle = nil // trigger a reopen on next call to gather
-		return fmt.Errorf("failed to list IPVS services: %v", err)
+		return fmt.Errorf("failed to list IPVS services: %w", err)
 	}
 	for _, s := range services {
 		fields := map[string]interface{}{
@@ -121,7 +121,7 @@ func destinationTags(d *ipvs.Destination) map[string]string {
 	}
 }
 
-// helper: convert protocol uint16 to human readable string (if possible)
+// helper: convert protocol uint16 to human-readable string (if possible)
 func protocolToString(p uint16) string {
 	switch p {
 	case syscall.IPPROTO_TCP:
@@ -131,11 +131,11 @@ func protocolToString(p uint16) string {
 	case syscall.IPPROTO_SCTP:
 		return "sctp"
 	default:
-		return fmt.Sprintf("%d", p)
+		return strconv.FormatUint(uint64(p), 10)
 	}
 }
 
-// helper: convert addressFamily to a human readable string
+// helper: convert addressFamily to a human-readable string
 func addressFamilyToString(af uint16) string {
 	switch af {
 	case syscall.AF_INET:
@@ -143,7 +143,7 @@ func addressFamilyToString(af uint16) string {
 	case syscall.AF_INET6:
 		return "inet6"
 	default:
-		return fmt.Sprintf("%d", af)
+		return strconv.FormatUint(uint64(af), 10)
 	}
 }
 

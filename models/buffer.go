@@ -104,7 +104,7 @@ func (b *Buffer) metricDropped(metric telegraf.Metric) {
 	metric.Reject()
 }
 
-func (b *Buffer) add(m telegraf.Metric) int {
+func (b *Buffer) addMetric(m telegraf.Metric) int {
 	dropped := 0
 	// Check if Buffer is full
 	if b.size == b.cap {
@@ -137,7 +137,7 @@ func (b *Buffer) Add(metrics ...telegraf.Metric) int {
 
 	dropped := 0
 	for i := range metrics {
-		if n := b.add(metrics[i]); n != 0 {
+		if n := b.addMetric(metrics[i]); n != 0 {
 			dropped += n
 		}
 	}
@@ -220,17 +220,6 @@ func (b *Buffer) Reject(batch []telegraf.Metric) {
 	b.BufferSize.Set(int64(b.length()))
 }
 
-// dist returns the distance between two indexes.  Because this data structure
-// uses a half open range the arguments must both either left side or right
-// side pairs.
-func (b *Buffer) dist(begin, end int) int {
-	if begin <= end {
-		return end - begin
-	} else {
-		return b.cap - begin + end
-	}
-}
-
 // next returns the next index with wrapping.
 func (b *Buffer) next(index int) int {
 	index++
@@ -240,19 +229,10 @@ func (b *Buffer) next(index int) int {
 	return index
 }
 
-// next returns the index that is count newer with wrapping.
+// nextby returns the index that is count newer with wrapping.
 func (b *Buffer) nextby(index, count int) int {
 	index += count
 	index %= b.cap
-	return index
-}
-
-// next returns the prev index with wrapping.
-func (b *Buffer) prev(index int) int {
-	index--
-	if index < 0 {
-		return b.cap - 1
-	}
 	return index
 }
 
@@ -270,11 +250,4 @@ func (b *Buffer) prevby(index, count int) int {
 func (b *Buffer) resetBatch() {
 	b.batchFirst = 0
 	b.batchSize = 0
-}
-
-func min(a, b int) int {
-	if b < a {
-		return b
-	}
-	return a
 }

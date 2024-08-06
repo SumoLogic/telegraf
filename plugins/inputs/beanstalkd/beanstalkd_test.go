@@ -1,6 +1,7 @@
 package beanstalkd_test
 
 import (
+	"errors"
 	"io"
 	"net"
 	"net/textproto"
@@ -22,6 +23,7 @@ func TestBeanstalkd(t *testing.T) {
 		tubesConfig      []string
 		expectedTubes    []tubeStats
 		notExpectedTubes []tubeStats
+		expectedError    string
 	}{
 		{
 			name:        "All tubes stats",
@@ -50,15 +52,14 @@ func TestBeanstalkd(t *testing.T) {
 				{name: "default", fields: defaultTubeFields},
 				{name: "test", fields: testTubeFields},
 			},
+			expectedError: "input does not match format",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			server, err := startTestServer(t)
-			if err != nil {
-				t.Fatalf("Unable to create test server")
-			}
+			require.NoError(t, err, "Unable to create test server")
 			defer server.Close()
 
 			serverAddress := server.Addr().String()
@@ -68,8 +69,13 @@ func TestBeanstalkd(t *testing.T) {
 			}
 
 			var acc testutil.Accumulator
-			require.NoError(t, acc.GatherError(plugin.Gather))
-
+			err = acc.GatherError(plugin.Gather)
+			if test.expectedError == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Equal(t, test.expectedError, err.Error())
+			}
 			acc.AssertContainsTaggedFields(t, "beanstalkd_overview",
 				overviewFields,
 				getOverviewTags(serverAddress),
@@ -110,13 +116,13 @@ func startTestServer(t *testing.T) (net.Listener, error) {
 		tp := textproto.NewConn(connection)
 		defer tp.Close()
 
-		sendSuccessResponse := func(body string) {
-			tp.PrintfLine("OK %d\r\n%s", len(body), body)
+		sendSuccessResponse := func(body string) error {
+			return tp.PrintfLine("OK %d\r\n%s", len(body), body)
 		}
 
 		for {
 			cmd, err := tp.ReadLine()
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return
 			} else if err != nil {
 				t.Log("Test server: failed read command. Error: ", err)
@@ -125,15 +131,30 @@ func startTestServer(t *testing.T) (net.Listener, error) {
 
 			switch cmd {
 			case "list-tubes":
-				sendSuccessResponse(listTubesResponse)
+				if err := sendSuccessResponse(listTubesResponse); err != nil {
+					t.Logf("sending response %q failed: %v", listTubesResponse, err)
+					return
+				}
 			case "stats":
-				sendSuccessResponse(statsResponse)
+				if err := sendSuccessResponse(statsResponse); err != nil {
+					t.Logf("sending response %q failed: %v", statsResponse, err)
+					return
+				}
 			case "stats-tube default":
-				sendSuccessResponse(statsTubeDefaultResponse)
+				if err := sendSuccessResponse(statsTubeDefaultResponse); err != nil {
+					t.Logf("sending response %q failed: %v", statsTubeDefaultResponse, err)
+					return
+				}
 			case "stats-tube test":
-				sendSuccessResponse(statsTubeTestResponse)
+				if err := sendSuccessResponse(statsTubeTestResponse); err != nil {
+					t.Logf("sending response %q failed: %v", statsTubeTestResponse, err)
+					return
+				}
 			case "stats-tube unknown":
-				tp.PrintfLine("NOT_FOUND")
+				if err := tp.PrintfLine("NOT_FOUND"); err != nil {
+					t.Logf("sending response %q failed: %v", "NOT_FOUND", err)
+					return
+				}
 			default:
 				t.Log("Test server: unknown command")
 			}

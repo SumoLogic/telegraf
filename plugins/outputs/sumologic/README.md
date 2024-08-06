@@ -1,20 +1,31 @@
 # Sumo Logic Output Plugin
 
-This plugin sends metrics to [Sumo Logic HTTP Source](https://help.sumologic.com/03Send-Data/Sources/02Sources-for-Hosted-Collectors/HTTP-Source/Upload-Metrics-to-an-HTTP-Source)
-in HTTP messages, encoded using one of the output data formats.
+This plugin sends metrics to [Sumo Logic HTTP Source][http-source] in HTTP
+messages, encoded using one of the output data formats.
 
 Telegraf minimum version: Telegraf 1.16.0
 
 Currently metrics can be sent using one of the following data formats, supported
 by Sumologic HTTP Source:
 
-  * `graphite` - for Content-Type of `application/vnd.sumologic.graphite`
-  * `carbon2` - for Content-Type of `application/vnd.sumologic.carbon2`
-  * `prometheus` - for Content-Type of `application/vnd.sumologic.prometheus`
+* `graphite` - for Content-Type of `application/vnd.sumologic.graphite`
+* `carbon2` - for Content-Type of `application/vnd.sumologic.carbon2`
+* `prometheus` - for Content-Type of `application/vnd.sumologic.prometheus`
 
-### Configuration:
+[http-source]: https://help.sumologic.com/03Send-Data/Sources/02Sources-for-Hosted-Collectors/HTTP-Source/Upload-Metrics-to-an-HTTP-Source
 
-```toml
+## Global configuration options <!-- @/docs/includes/plugin_config.md -->
+
+In addition to the plugin-specific configuration settings, plugins support
+additional global and plugin configuration settings. These settings are used to
+modify metrics, tags, and field or create aliases and configure ordering, etc.
+See the [CONFIGURATION.md][CONFIGURATION.md] for more details.
+
+[CONFIGURATION.md]: ../../../docs/CONFIGURATION.md#plugins
+
+## Configuration
+
+```toml @sample.conf
 # A plugin that can send metrics to Sumo Logic HTTP metric collector.
 [[outputs.sumologic]]
   ## Unique URL generated for your HTTP Metrics Source.
@@ -23,7 +34,7 @@ by Sumologic HTTP Source:
 
   ## Data format to be used for sending metrics.
   ## This will set the "Content-Type" header accordingly.
-  ## Currently supported formats: 
+  ## Currently supported formats:
   ## * graphite - for Content-Type of application/vnd.sumologic.graphite
   ## * carbon2 - for Content-Type of application/vnd.sumologic.carbon2
   ## * prometheus - for Content-Type of application/vnd.sumologic.prometheus
@@ -38,7 +49,7 @@ by Sumologic HTTP Source:
 
   ## Timeout used for HTTP request
   # timeout = "5s"
-  
+
   ## Max HTTP request body size in bytes before compression (if applied).
   ## By default 1MB is recommended.
   ## NOTE:

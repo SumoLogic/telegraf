@@ -5,19 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/metric"
+	"github.com/influxdata/telegraf/plugins/serializers"
 )
-
-func MustMetric(v telegraf.Metric, err error) telegraf.Metric {
-	if err != nil {
-		panic(err)
-	}
-	return v
-}
 
 func TestSerializeMetricFloat(t *testing.T) {
 	now := time.Now()
@@ -27,32 +20,33 @@ func TestSerializeMetricFloat(t *testing.T) {
 	fields := map[string]interface{}{
 		"usage_idle": float64(91.5),
 	}
-	m, err := metric.New("cpu", tags, fields, now)
-	require.NoError(t, err)
+	m := metric.New("cpu", tags, fields, now)
 
 	testcases := []struct {
-		format   format
+		format   string
 		expected string
 	}{
 		{
-			format:   Carbon2FormatFieldSeparate,
+			format:   "field_separate",
 			expected: fmt.Sprintf("metric=cpu field=usage_idle cpu=cpu0  91.5 %d\n", now.Unix()),
 		},
 		{
-			format:   Carbon2FormatMetricIncludesField,
+			format:   "metric_includes_field",
 			expected: fmt.Sprintf("metric=cpu_usage_idle cpu=cpu0  91.5 %d\n", now.Unix()),
 		},
 	}
 
 	for _, tc := range testcases {
-		t.Run(string(tc.format), func(t *testing.T) {
-			s, err := NewSerializer(string(tc.format))
-			require.NoError(t, err)
+		t.Run(tc.format, func(t *testing.T) {
+			s := &Serializer{
+				Format: tc.format,
+			}
+			require.NoError(t, s.Init())
 
 			buf, err := s.Serialize(m)
 			require.NoError(t, err)
 
-			assert.Equal(t, tc.expected, string(buf))
+			require.Equal(t, tc.expected, string(buf))
 		})
 	}
 }
@@ -65,32 +59,33 @@ func TestSerializeMetricWithEmptyStringTag(t *testing.T) {
 	fields := map[string]interface{}{
 		"usage_idle": float64(91.5),
 	}
-	m, err := metric.New("cpu", tags, fields, now)
-	require.NoError(t, err)
+	m := metric.New("cpu", tags, fields, now)
 
 	testcases := []struct {
-		format   format
+		format   string
 		expected string
 	}{
 		{
-			format:   Carbon2FormatFieldSeparate,
+			format:   "field_separate",
 			expected: fmt.Sprintf("metric=cpu field=usage_idle cpu=null  91.5 %d\n", now.Unix()),
 		},
 		{
-			format:   Carbon2FormatMetricIncludesField,
+			format:   "metric_includes_field",
 			expected: fmt.Sprintf("metric=cpu_usage_idle cpu=null  91.5 %d\n", now.Unix()),
 		},
 	}
 
 	for _, tc := range testcases {
-		t.Run(string(tc.format), func(t *testing.T) {
-			s, err := NewSerializer(string(tc.format))
-			require.NoError(t, err)
+		t.Run(tc.format, func(t *testing.T) {
+			s := &Serializer{
+				Format: tc.format,
+			}
+			require.NoError(t, s.Init())
 
 			buf, err := s.Serialize(m)
 			require.NoError(t, err)
 
-			assert.Equal(t, tc.expected, string(buf))
+			require.Equal(t, tc.expected, string(buf))
 		})
 	}
 }
@@ -103,32 +98,33 @@ func TestSerializeWithSpaces(t *testing.T) {
 	fields := map[string]interface{}{
 		"usage_idle 1": float64(91.5),
 	}
-	m, err := metric.New("cpu metric", tags, fields, now)
-	require.NoError(t, err)
+	m := metric.New("cpu metric", tags, fields, now)
 
 	testcases := []struct {
-		format   format
+		format   string
 		expected string
 	}{
 		{
-			format:   Carbon2FormatFieldSeparate,
+			format:   "field_separate",
 			expected: fmt.Sprintf("metric=cpu_metric field=usage_idle_1 cpu_0=cpu_0  91.5 %d\n", now.Unix()),
 		},
 		{
-			format:   Carbon2FormatMetricIncludesField,
+			format:   "metric_includes_field",
 			expected: fmt.Sprintf("metric=cpu_metric_usage_idle_1 cpu_0=cpu_0  91.5 %d\n", now.Unix()),
 		},
 	}
 
 	for _, tc := range testcases {
-		t.Run(string(tc.format), func(t *testing.T) {
-			s, err := NewSerializer(string(tc.format))
-			require.NoError(t, err)
+		t.Run(tc.format, func(t *testing.T) {
+			s := &Serializer{
+				Format: tc.format,
+			}
+			require.NoError(t, s.Init())
 
 			buf, err := s.Serialize(m)
 			require.NoError(t, err)
 
-			assert.Equal(t, tc.expected, string(buf))
+			require.Equal(t, tc.expected, string(buf))
 		})
 	}
 }
@@ -141,32 +137,33 @@ func TestSerializeMetricInt(t *testing.T) {
 	fields := map[string]interface{}{
 		"usage_idle": int64(90),
 	}
-	m, err := metric.New("cpu", tags, fields, now)
-	require.NoError(t, err)
+	m := metric.New("cpu", tags, fields, now)
 
 	testcases := []struct {
-		format   format
+		format   string
 		expected string
 	}{
 		{
-			format:   Carbon2FormatFieldSeparate,
+			format:   "field_separate",
 			expected: fmt.Sprintf("metric=cpu field=usage_idle cpu=cpu0  90 %d\n", now.Unix()),
 		},
 		{
-			format:   Carbon2FormatMetricIncludesField,
+			format:   "metric_includes_field",
 			expected: fmt.Sprintf("metric=cpu_usage_idle cpu=cpu0  90 %d\n", now.Unix()),
 		},
 	}
 
 	for _, tc := range testcases {
-		t.Run(string(tc.format), func(t *testing.T) {
-			s, err := NewSerializer(string(tc.format))
-			require.NoError(t, err)
+		t.Run(tc.format, func(t *testing.T) {
+			s := &Serializer{
+				Format: tc.format,
+			}
+			require.NoError(t, s.Init())
 
 			buf, err := s.Serialize(m)
 			require.NoError(t, err)
 
-			assert.Equal(t, tc.expected, string(buf))
+			require.Equal(t, tc.expected, string(buf))
 		})
 	}
 }
@@ -179,38 +176,39 @@ func TestSerializeMetricString(t *testing.T) {
 	fields := map[string]interface{}{
 		"usage_idle": "foobar",
 	}
-	m, err := metric.New("cpu", tags, fields, now)
-	assert.NoError(t, err)
+	m := metric.New("cpu", tags, fields, now)
 
 	testcases := []struct {
-		format   format
+		format   string
 		expected string
 	}{
 		{
-			format:   Carbon2FormatFieldSeparate,
+			format:   "field_separate",
 			expected: "",
 		},
 		{
-			format:   Carbon2FormatMetricIncludesField,
+			format:   "metric_includes_field",
 			expected: "",
 		},
 	}
 
 	for _, tc := range testcases {
-		t.Run(string(tc.format), func(t *testing.T) {
-			s, err := NewSerializer(string(tc.format))
-			require.NoError(t, err)
+		t.Run(tc.format, func(t *testing.T) {
+			s := &Serializer{
+				Format: tc.format,
+			}
+			require.NoError(t, s.Init())
 
 			buf, err := s.Serialize(m)
 			require.NoError(t, err)
 
-			assert.Equal(t, tc.expected, string(buf))
+			require.Equal(t, tc.expected, string(buf))
 		})
 	}
 }
 
 func TestSerializeMetricBool(t *testing.T) {
-	requireMetric := func(t *testing.T, tim time.Time, value bool) telegraf.Metric {
+	requireMetric := func(tim time.Time, value bool) telegraf.Metric {
 		tags := map[string]string{
 			"tag_name": "tag_value",
 		}
@@ -218,8 +216,7 @@ func TestSerializeMetricBool(t *testing.T) {
 			"java_lang_GarbageCollector_Valid": value,
 		}
 
-		m, err := metric.New("cpu", tags, fields, tim)
-		require.NoError(t, err)
+		m := metric.New("cpu", tags, fields, tim)
 
 		return m
 	}
@@ -232,66 +229,66 @@ func TestSerializeMetricBool(t *testing.T) {
 		expected string
 	}{
 		{
-			metric:   requireMetric(t, now, false),
-			format:   string(Carbon2FormatFieldSeparate),
+			metric:   requireMetric(now, false),
+			format:   "field_separate",
 			expected: fmt.Sprintf("metric=cpu field=java_lang_GarbageCollector_Valid tag_name=tag_value  0 %d\n", now.Unix()),
 		},
 		{
-			metric:   requireMetric(t, now, false),
-			format:   string(Carbon2FormatMetricIncludesField),
+			metric:   requireMetric(now, false),
+			format:   "metric_includes_field",
 			expected: fmt.Sprintf("metric=cpu_java_lang_GarbageCollector_Valid tag_name=tag_value  0 %d\n", now.Unix()),
 		},
 		{
-			metric:   requireMetric(t, now, true),
-			format:   string(Carbon2FormatFieldSeparate),
+			metric:   requireMetric(now, true),
+			format:   "field_separate",
 			expected: fmt.Sprintf("metric=cpu field=java_lang_GarbageCollector_Valid tag_name=tag_value  1 %d\n", now.Unix()),
 		},
 		{
-			metric:   requireMetric(t, now, true),
-			format:   string(Carbon2FormatMetricIncludesField),
+			metric:   requireMetric(now, true),
+			format:   "metric_includes_field",
 			expected: fmt.Sprintf("metric=cpu_java_lang_GarbageCollector_Valid tag_name=tag_value  1 %d\n", now.Unix()),
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.format, func(t *testing.T) {
-			s, err := NewSerializer(tc.format)
-			require.NoError(t, err)
+			s := &Serializer{
+				Format: tc.format,
+			}
+			require.NoError(t, s.Init())
 
 			buf, err := s.Serialize(tc.metric)
 			require.NoError(t, err)
 
-			assert.Equal(t, tc.expected, string(buf))
+			require.Equal(t, tc.expected, string(buf))
 		})
 	}
 }
 
 func TestSerializeBatch(t *testing.T) {
-	m := MustMetric(
-		metric.New(
-			"cpu",
-			map[string]string{},
-			map[string]interface{}{
-				"value": 42,
-			},
-			time.Unix(0, 0),
-		),
+	m := metric.New(
+		"cpu",
+		map[string]string{},
+		map[string]interface{}{
+			"value": 42,
+		},
+		time.Unix(0, 0),
 	)
 
 	metrics := []telegraf.Metric{m, m}
 
 	testcases := []struct {
-		format   format
+		format   string
 		expected string
 	}{
 		{
-			format: Carbon2FormatFieldSeparate,
+			format: "field_separate",
 			expected: `metric=cpu field=value  42 0
 metric=cpu field=value  42 0
 `,
 		},
 		{
-			format: Carbon2FormatMetricIncludesField,
+			format: "metric_includes_field",
 			expected: `metric=cpu_value  42 0
 metric=cpu_value  42 0
 `,
@@ -299,14 +296,147 @@ metric=cpu_value  42 0
 	}
 
 	for _, tc := range testcases {
-		t.Run(string(tc.format), func(t *testing.T) {
-			s, err := NewSerializer(string(tc.format))
-			require.NoError(t, err)
+		t.Run(tc.format, func(t *testing.T) {
+			s := &Serializer{
+				Format: tc.format,
+			}
+			require.NoError(t, s.Init())
 
 			buf, err := s.SerializeBatch(metrics)
 			require.NoError(t, err)
 
-			assert.Equal(t, tc.expected, string(buf))
+			require.Equal(t, tc.expected, string(buf))
 		})
+	}
+}
+
+func TestSerializeMetricIsProperlySanitized(t *testing.T) {
+	now := time.Now()
+
+	testcases := []struct {
+		metricFunc  func() telegraf.Metric
+		format      string
+		expected    string
+		replaceChar string
+		expectedErr bool
+	}{
+		{
+			metricFunc: func() telegraf.Metric {
+				fields := map[string]interface{}{
+					"usage_idle": float64(91.5),
+				}
+				return metric.New("cpu=1", nil, fields, now)
+			},
+			format:   "field_separate",
+			expected: fmt.Sprintf("metric=cpu:1 field=usage_idle  91.5 %d\n", now.Unix()),
+		},
+		{
+			metricFunc: func() telegraf.Metric {
+				fields := map[string]interface{}{
+					"usage_idle": float64(91.5),
+				}
+				return metric.New("cpu=1", nil, fields, now)
+			},
+			format:      "field_separate",
+			expected:    fmt.Sprintf("metric=cpu_1 field=usage_idle  91.5 %d\n", now.Unix()),
+			replaceChar: "_",
+		},
+		{
+			metricFunc: func() telegraf.Metric {
+				fields := map[string]interface{}{
+					"usage_idle": float64(91.5),
+				}
+				return metric.New("cpu=1=tmp$custom", nil, fields, now)
+			},
+			format:   "field_separate",
+			expected: fmt.Sprintf("metric=cpu:1:tmp:custom field=usage_idle  91.5 %d\n", now.Unix()),
+		},
+		{
+			metricFunc: func() telegraf.Metric {
+				fields := map[string]interface{}{
+					"usage_idle": float64(91.5),
+				}
+				return metric.New("cpu=1=tmp$custom%namespace", nil, fields, now)
+			},
+			format:   "field_separate",
+			expected: fmt.Sprintf("metric=cpu:1:tmp:custom:namespace field=usage_idle  91.5 %d\n", now.Unix()),
+		},
+		{
+			metricFunc: func() telegraf.Metric {
+				fields := map[string]interface{}{
+					"usage_idle": float64(91.5),
+				}
+				return metric.New("cpu=1=tmp$custom%namespace", nil, fields, now)
+			},
+			format:   "metric_includes_field",
+			expected: fmt.Sprintf("metric=cpu:1:tmp:custom:namespace_usage_idle  91.5 %d\n", now.Unix()),
+		},
+		{
+			metricFunc: func() telegraf.Metric {
+				fields := map[string]interface{}{
+					"usage_idle": float64(91.5),
+				}
+				return metric.New("cpu=1=tmp$custom%namespace", nil, fields, now)
+			},
+			format:      "metric_includes_field",
+			expected:    fmt.Sprintf("metric=cpu_1_tmp_custom_namespace_usage_idle  91.5 %d\n", now.Unix()),
+			replaceChar: "_",
+		},
+		{
+			metricFunc: func() telegraf.Metric {
+				fields := map[string]interface{}{
+					"usage_idle": float64(91.5),
+				}
+				return metric.New("cpu=1=tmp$custom%namespace", nil, fields, now)
+			},
+			format:      "metric_includes_field",
+			expectedErr: true,
+			replaceChar: "___",
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.format, func(t *testing.T) {
+			m := tc.metricFunc()
+
+			s := &Serializer{
+				Format:              tc.format,
+				SanitizeReplaceChar: tc.replaceChar,
+			}
+			err := s.Init()
+			if tc.expectedErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			buf, err := s.Serialize(m)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.expected, string(buf))
+		})
+	}
+}
+
+func BenchmarkSerialize(b *testing.B) {
+	s := &Serializer{}
+	require.NoError(b, s.Init())
+	metrics := serializers.BenchmarkMetrics(b)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := s.Serialize(metrics[i%len(metrics)])
+		require.NoError(b, err)
+	}
+}
+
+func BenchmarkSerializeBatch(b *testing.B) {
+	s := &Serializer{}
+	require.NoError(b, s.Init())
+	m := serializers.BenchmarkMetrics(b)
+	metrics := m[:]
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := s.SerializeBatch(metrics)
+		require.NoError(b, err)
 	}
 }

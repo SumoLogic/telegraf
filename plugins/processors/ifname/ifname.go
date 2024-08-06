@@ -1,6 +1,9 @@
+//go:generate ../../../tools/readme_config_includer/generator
 package ifname
 
 import (
+	_ "embed"
+	"errors"
 	"fmt"
 	"strconv"
 	"sync"
@@ -8,80 +11,21 @@ import (
 
 	"github.com/influxdata/telegraf"
 	"github.com/influxdata/telegraf/config"
-	"github.com/influxdata/telegraf/internal"
 	"github.com/influxdata/telegraf/internal/snmp"
-	si "github.com/influxdata/telegraf/plugins/inputs/snmp"
+	"github.com/influxdata/telegraf/plugins/common/parallel"
 	"github.com/influxdata/telegraf/plugins/processors"
-	"github.com/influxdata/telegraf/plugins/processors/reverse_dns/parallel"
 )
 
-var sampleConfig = `
-  ## Name of tag holding the interface number
-  # tag = "ifIndex"
-
-  ## Name of output tag where service name will be added
-  # dest = "ifName"
-
-  ## Name of tag of the SNMP agent to request the interface name from
-  # agent = "agent"
-
-  ## Timeout for each request.
-  # timeout = "5s"
-
-  ## SNMP version; can be 1, 2, or 3.
-  # version = 2
-
-  ## SNMP community string.
-  # community = "public"
-
-  ## Number of retries to attempt.
-  # retries = 3
-
-  ## The GETBULK max-repetitions parameter.
-  # max_repetitions = 10
-
-  ## SNMPv3 authentication and encryption options.
-  ##
-  ## Security Name.
-  # sec_name = "myuser"
-  ## Authentication protocol; one of "MD5", "SHA", or "".
-  # auth_protocol = "MD5"
-  ## Authentication password.
-  # auth_password = "pass"
-  ## Security Level; one of "noAuthNoPriv", "authNoPriv", or "authPriv".
-  # sec_level = "authNoPriv"
-  ## Context Name.
-  # context_name = ""
-  ## Privacy protocol used for encrypted messages; one of "DES", "AES" or "".
-  # priv_protocol = ""
-  ## Privacy password used for encrypted messages.
-  # priv_password = ""
-
-  ## max_parallel_lookups is the maximum number of SNMP requests to
-  ## make at the same time.
-  # max_parallel_lookups = 100
-
-  ## ordered controls whether or not the metrics need to stay in the
-  ## same order this plugin received them in. If false, this plugin
-  ## may change the order when data is cached.  If you need metrics to
-  ## stay in order set this to true.  keeping the metrics ordered may
-  ## be slightly slower
-  # ordered = false
-
-  ## cache_ttl is the amount of time interface names are cached for a
-  ## given agent.  After this period elapses if names are needed they
-  ## will be retrieved again.
-  # cache_ttl = "8h"
-`
+//go:embed sample.conf
+var sampleConfig string
 
 type nameMap map[uint64]string
 type keyType = string
 type valType = nameMap
 
 type mapFunc func(agent string) (nameMap, error)
-type makeTableFunc func(string) (*si.Table, error)
 
-type sigMap map[string](chan struct{})
+type sigMap map[string]chan struct{}
 
 type IfName struct {
 	SourceTag string `toml:"tag"`
@@ -97,41 +41,34 @@ type IfName struct {
 
 	Log telegraf.Logger `toml:"-"`
 
-	ifTable  *si.Table `toml:"-"`
-	ifXTable *si.Table `toml:"-"`
+	ifTable  *snmp.Table
+	ifXTable *snmp.Table
 
-	rwLock sync.RWMutex `toml:"-"`
-	cache  *TTLCache    `toml:"-"`
+	cache    *TTLCache
+	lock     sync.Mutex
+	parallel parallel.Parallel
+	sigs     sigMap
 
-	parallel parallel.Parallel    `toml:"-"`
-	acc      telegraf.Accumulator `toml:"-"`
-
-	getMapRemote mapFunc       `toml:"-"`
-	makeTable    makeTableFunc `toml:"-"`
-
-	gsBase snmp.GosnmpWrapper `toml:"-"`
-
-	sigs sigMap `toml:"-"`
+	getMapRemote mapFunc
 }
 
-const minRetry time.Duration = 5 * time.Minute
+const minRetry = 5 * time.Minute
 
-func (d *IfName) SampleConfig() string {
+func (*IfName) SampleConfig() string {
 	return sampleConfig
-}
-
-func (d *IfName) Description() string {
-	return "Add a tag of the network interface name looked up over SNMP by interface number"
 }
 
 func (d *IfName) Init() error {
 	d.getMapRemote = d.getMapRemoteNoMock
-	d.makeTable = makeTableNoMock
 
 	c := NewTTLCache(time.Duration(d.CacheTTL), d.CacheSize)
 	d.cache = &c
 
 	d.sigs = make(sigMap)
+
+	if _, err := snmp.NewWrapper(d.ClientConfig); err != nil {
+		return fmt.Errorf("parsing SNMP client config: %w", err)
+	}
 
 	return nil
 }
@@ -143,22 +80,22 @@ func (d *IfName) addTag(metric telegraf.Metric) error {
 		return nil
 	}
 
-	num_s, ok := metric.GetTag(d.SourceTag)
+	numS, ok := metric.GetTag(d.SourceTag)
 	if !ok {
 		d.Log.Warn("Source tag missing.")
 		return nil
 	}
 
-	num, err := strconv.ParseUint(num_s, 10, 64)
+	num, err := strconv.ParseUint(numS, 10, 64)
 	if err != nil {
-		return fmt.Errorf("couldn't parse source tag as uint")
+		return errors.New("couldn't parse source tag as uint")
 	}
 
 	firstTime := true
 	for {
 		m, age, err := d.getMap(agent)
 		if err != nil {
-			return fmt.Errorf("couldn't retrieve the table of interface names: %w", err)
+			return fmt.Errorf("couldn't retrieve the table of interface names for %s: %w", agent, err)
 		}
 
 		name, found := m[num]
@@ -172,7 +109,7 @@ func (d *IfName) addTag(metric telegraf.Metric) error {
 		// the interface we're interested in.  If the entry is old
 		// enough, retrieve it from the agent once more.
 		if age < minRetry {
-			return fmt.Errorf("interface number %d isn't in the table of interface names", num)
+			return fmt.Errorf("interface number %d isn't in the table of interface names on %s", num, agent)
 		}
 
 		if firstTime {
@@ -182,38 +119,32 @@ func (d *IfName) addTag(metric telegraf.Metric) error {
 		}
 
 		// not found, cache hit, retrying
-		return fmt.Errorf("missing interface but couldn't retrieve table")
+		return fmt.Errorf("missing interface but couldn't retrieve table for %v", agent)
 	}
 }
 
 func (d *IfName) invalidate(agent string) {
-	d.rwLock.RLock()
+	d.lock.Lock()
 	d.cache.Delete(agent)
-	d.rwLock.RUnlock()
+	d.lock.Unlock()
 }
 
 func (d *IfName) Start(acc telegraf.Accumulator) error {
-	d.acc = acc
-
 	var err error
-	d.gsBase, err = snmp.NewWrapper(d.ClientConfig)
-	if err != nil {
-		return fmt.Errorf("parsing SNMP client config: %w", err)
-	}
 
-	d.ifTable, err = d.makeTable("IF-MIB::ifTable")
+	d.ifTable, err = d.makeTable("1.3.6.1.2.1.2.2.1.2")
 	if err != nil {
-		return fmt.Errorf("looking up ifTable in local MIB: %w", err)
+		return fmt.Errorf("preparing ifTable: %w", err)
 	}
-	d.ifXTable, err = d.makeTable("IF-MIB::ifXTable")
+	d.ifXTable, err = d.makeTable("1.3.6.1.2.1.31.1.1.1.1")
 	if err != nil {
-		return fmt.Errorf("looking up ifXTable in local MIB: %w", err)
+		return fmt.Errorf("preparing ifXTable: %w", err)
 	}
 
 	fn := func(m telegraf.Metric) []telegraf.Metric {
 		err := d.addTag(m)
 		if err != nil {
-			d.Log.Debugf("Error adding tag %v", err)
+			d.Log.Debugf("Error adding tag: %v", err)
 		}
 		return []telegraf.Metric{m}
 	}
@@ -226,14 +157,13 @@ func (d *IfName) Start(acc telegraf.Accumulator) error {
 	return nil
 }
 
-func (d *IfName) Add(metric telegraf.Metric, acc telegraf.Accumulator) error {
+func (d *IfName) Add(metric telegraf.Metric, _ telegraf.Accumulator) error {
 	d.parallel.Enqueue(metric)
 	return nil
 }
 
-func (d *IfName) Stop() error {
+func (d *IfName) Stop() {
 	d.parallel.Stop()
-	return nil
 }
 
 // getMap gets the interface names map either from cache or from the SNMP
@@ -241,86 +171,86 @@ func (d *IfName) Stop() error {
 func (d *IfName) getMap(agent string) (entry nameMap, age time.Duration, err error) {
 	var sig chan struct{}
 
+	d.lock.Lock()
+
 	// Check cache
-	d.rwLock.RLock()
 	m, ok, age := d.cache.Get(agent)
-	d.rwLock.RUnlock()
 	if ok {
+		d.lock.Unlock()
 		return m, age, nil
 	}
 
-	// Is this the first request for this agent?
-	d.rwLock.Lock()
+	// cache miss.  Is this the first request for this agent?
 	sig, found := d.sigs[agent]
 	if !found {
+		// This is the first request.  Make signal for subsequent requests to wait on
 		s := make(chan struct{})
 		d.sigs[agent] = s
 		sig = s
 	}
-	d.rwLock.Unlock()
+
+	d.lock.Unlock()
 
 	if found {
 		// This is not the first request.  Wait for first to finish.
 		<-sig
+
 		// Check cache again
-		d.rwLock.RLock()
+		d.lock.Lock()
 		m, ok, age := d.cache.Get(agent)
-		d.rwLock.RUnlock()
+		d.lock.Unlock()
 		if ok {
 			return m, age, nil
-		} else {
-			return nil, 0, fmt.Errorf("getting remote table from cache")
 		}
+		return nil, 0, errors.New("getting remote table from cache")
 	}
 
 	// The cache missed and this is the first request for this
-	// agent.
-
-	// Make the SNMP request
+	// agent. Make the SNMP request
 	m, err = d.getMapRemote(agent)
+
+	d.lock.Lock()
 	if err != nil {
-		//failure.  signal without saving to cache
-		d.rwLock.Lock()
+		//snmp failure.  signal without saving to cache
 		close(sig)
 		delete(d.sigs, agent)
-		d.rwLock.Unlock()
 
+		d.lock.Unlock()
 		return nil, 0, fmt.Errorf("getting remote table: %w", err)
 	}
 
-	// Cache it, then signal any other waiting requests for this agent
-	// and clean up
-	d.rwLock.Lock()
+	// snmp success.  Cache response, then signal any other waiting
+	// requests for this agent and clean up
 	d.cache.Put(agent, m)
 	close(sig)
 	delete(d.sigs, agent)
-	d.rwLock.Unlock()
 
+	d.lock.Unlock()
 	return m, 0, nil
 }
 
 func (d *IfName) getMapRemoteNoMock(agent string) (nameMap, error) {
-	gs := d.gsBase
-	err := gs.SetAgent(agent)
+	gs, err := snmp.NewWrapper(d.ClientConfig)
 	if err != nil {
+		return nil, fmt.Errorf("parsing SNMP client config: %w", err)
+	}
+
+	if err = gs.SetAgent(agent); err != nil {
 		return nil, fmt.Errorf("parsing agent tag: %w", err)
 	}
 
-	err = gs.Connect()
-	if err != nil {
+	if err = gs.Connect(); err != nil {
 		return nil, fmt.Errorf("connecting when fetching interface names: %w", err)
 	}
 
 	//try ifXtable and ifName first.  if that fails, fall back to
 	//ifTable and ifDescr
 	var m nameMap
-	m, err = buildMap(gs, d.ifXTable, "ifName")
-	if err == nil {
+	if m, err = d.buildMap(gs, d.ifXTable); err == nil {
 		return m, nil
 	}
 
-	m, err = buildMap(gs, d.ifTable, "ifDescr")
-	if err == nil {
+	if m, err = d.buildMap(gs, d.ifTable); err == nil {
 		return m, nil
 	}
 
@@ -335,26 +265,23 @@ func init() {
 			AgentTag:           "agent",
 			CacheSize:          100,
 			MaxParallelLookups: 100,
-			ClientConfig: snmp.ClientConfig{
-				Retries:        3,
-				MaxRepetitions: 10,
-				Timeout:        internal.Duration{Duration: 5 * time.Second},
-				Version:        2,
-				Community:      "public",
-			},
-			CacheTTL: config.Duration(8 * time.Hour),
+			ClientConfig:       *snmp.DefaultClientConfig(),
+			CacheTTL:           config.Duration(8 * time.Hour),
 		}
 	})
 }
 
-func makeTableNoMock(tableName string) (*si.Table, error) {
+func (d *IfName) makeTable(oid string) (*snmp.Table, error) {
 	var err error
-	tab := si.Table{
-		Oid:        tableName,
+	tab := snmp.Table{
+		Name:       "ifTable",
 		IndexAsTag: true,
+		Fields: []snmp.Field{
+			{Oid: oid, Name: "ifName"},
+		},
 	}
 
-	err = tab.Init()
+	err = tab.Init(nil)
 	if err != nil {
 		//Init already wraps
 		return nil, err
@@ -363,7 +290,7 @@ func makeTableNoMock(tableName string) (*si.Table, error) {
 	return &tab, nil
 }
 
-func buildMap(gs snmp.GosnmpWrapper, tab *si.Table, column string) (nameMap, error) {
+func (d *IfName) buildMap(gs snmp.GosnmpWrapper, tab *snmp.Table) (nameMap, error) {
 	var err error
 
 	rtab, err := tab.Build(gs, true)
@@ -373,28 +300,28 @@ func buildMap(gs snmp.GosnmpWrapper, tab *si.Table, column string) (nameMap, err
 	}
 
 	if len(rtab.Rows) == 0 {
-		return nil, fmt.Errorf("empty table")
+		return nil, errors.New("empty table")
 	}
 
 	t := make(nameMap)
 	for _, v := range rtab.Rows {
-		i_str, ok := v.Tags["index"]
+		iStr, ok := v.Tags["index"]
 		if !ok {
 			//should always have an index tag because the table should
 			//always have IndexAsTag true
-			return nil, fmt.Errorf("no index tag")
+			return nil, errors.New("no index tag")
 		}
-		i, err := strconv.ParseUint(i_str, 10, 64)
+		i, err := strconv.ParseUint(iStr, 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("index tag isn't a uint")
+			return nil, errors.New("index tag isn't a uint")
 		}
-		name_if, ok := v.Fields[column]
+		nameIf, ok := v.Fields["ifName"]
 		if !ok {
-			return nil, fmt.Errorf("field %s is missing", column)
+			return nil, errors.New("ifName field is missing")
 		}
-		name, ok := name_if.(string)
+		name, ok := nameIf.(string)
 		if !ok {
-			return nil, fmt.Errorf("field %s isn't a string", column)
+			return nil, errors.New("ifName field isn't a string")
 		}
 
 		t[i] = name
