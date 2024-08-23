@@ -57,10 +57,11 @@ func (p *Parser) Parse(buf []byte) ([]telegraf.Metric, error) {
 	for i := 0; i < parquetReader.NumRowGroups(); i++ {
 		rowGroup := parquetReader.RowGroup(i)
 		scanners := make([]*columnParser, metadata.Schema.NumColumns())
-		for colIndex := range metadata.Schema.NumColumns() {
+		numCols := metadata.Schema.NumColumns()
+		for colIndex := 0; colIndex < numCols; colIndex++ {
 			col, err := rowGroup.Column(colIndex)
 			if err != nil {
-				return nil, fmt.Errorf("unable to fetch column %q: %w", colIndex, err)
+				return nil, fmt.Errorf("unable to fetch column %d: %w", colIndex, err)
 			}
 
 			scanners[colIndex] = newColumnParser(col)

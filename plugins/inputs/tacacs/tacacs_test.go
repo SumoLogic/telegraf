@@ -192,7 +192,7 @@ func TestTacacsLocal(t *testing.T) {
 		},
 		{
 			name:           "unreachable",
-			testingTimeout: config.Duration(time.Nanosecond * 1000),
+			testingTimeout: config.Duration(time.Second * 2),
 			serverToTest:   []string{"unreachable.test:49"},
 			usedUsername:   config.NewSecret([]byte(`testusername`)),
 			usedPassword:   config.NewSecret([]byte(`testpassword`)),
