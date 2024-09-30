@@ -2,6 +2,7 @@ module github.com/influxdata/telegraf
 
 go 1.22.0
 
+
 require (
 	collectd.org v0.6.0
 	github.com/99designs/keyring v1.2.2
