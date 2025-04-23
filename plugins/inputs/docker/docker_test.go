@@ -457,6 +457,7 @@ func TestDocker_WindowsMemoryContainerStats(t *testing.T) {
 			}, nil
 		},
 	}
+
 	err := d.Gather(&acc)
 	require.NoError(t, err)
 }
